@@ -1,4 +1,5 @@
 import {trainingTimeText,trainingTimeDetail,trainingProgress} from './training-time.mjs';
+import {preserveView} from './view-position.mjs';
 import {createTrainingCharts, metricDescriptors, normalizedMetricRows, runAppearance, comparisonWarnings, trainingMetricDiagnostics, formatMetric as fmt} from './training-charts.mjs';
 
 const el=(tag,text,className)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(className)n.className=className;return n};
@@ -136,6 +137,9 @@ export class TrainingMonitor {
     if(this.dialog.open&&focusedId)[...list.querySelectorAll('[data-select-run]')].find(n=>n.dataset.selectRun===focusedId)?.focus({preventScroll:true});
   }
   render(){
+    return preserveView(this.root,()=>this.renderContent(),{retainHeight:true});
+  }
+  renderContent(){
     const focus=document.activeElement;const focusId=focus?.id,focusRun=focus?.dataset?.modelRun,focusScroll=focus?.dataset?.scrollKey;
     this.root.querySelectorAll('details[data-detail-key]').forEach(d=>this.detailOpen.set(d.dataset.detailKey,d.open));
     this.root.querySelectorAll('[data-scroll-key]').forEach(wrap=>this.rememberScroll(wrap));

@@ -391,6 +391,17 @@ class MainWindow(QMainWindow):
             self.notify_update_progress("error","更新未完成；目前視窗會繼續保留。"+str(error))
 
     def save_download(self, download):
+        suggested = Path(download.downloadFileName()).name
+        if suggested.startswith('M') and suggested.endswith(('.json', '.csv', '.png')):
+            filename, _ = QFileDialog.getSaveFileName(self, "儲存模型評估報告", str(Path.home() / "Downloads" / suggested))
+            if not filename:
+                download.cancel()
+                return
+            destination = Path(filename)
+            download.setDownloadDirectory(str(destination.parent))
+            download.setDownloadFileName(destination.name)
+            download.accept()
+            return
         # The editor offers a recovery copy if an external revision conflicts.
         folder = self.service.data_root / "recovery"
         folder.mkdir(parents=True,exist_ok=True)

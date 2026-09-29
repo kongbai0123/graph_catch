@@ -53,5 +53,8 @@ jobs:
       - name: Verify external model import and layout
         run: python tests/desktop_model_import.py
 
+      - name: Verify model report tabs, scroll and downloads
+        run: python tests/desktop_model_layout.py
+
       - name: Verify multilabel split workflow
         run: python tests/desktop_multilabel_split.py
