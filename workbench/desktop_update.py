@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -13,6 +14,39 @@ SOURCE_SUFFIXES = {".py", ".js", ".mjs", ".css", ".html", ".json", ".ps1", ".bat
 SOURCE_DIRECTORIES = ("workbench", "web", "composer_core", "classical_segmentation", "sam2_segmentation")
 SOURCE_FILES = ("main.py", "cvat_setup.py", "setup_cvat.ps1", "bootstrap.ps1", "vision-workbench.bat",
                 "requirements.txt", "requirements-ai.txt", "requirements-training.txt", "requirements-lock.txt")
+VERSION_TAG = re.compile(r"refs/tags/v(\d+)\.(\d+)\.(\d+)(?:\^\{\})?$")
+
+
+def github_version_status(root, current_version, timeout=8):
+    """Read published version tags from origin without changing the checkout."""
+    root = Path(root).resolve()
+    current = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", current_version)
+    if not current:
+        return {"state": "unavailable", "message": "無法辨識目前程式版本。"}
+    if not (root / ".git").exists():
+        return {"state": "unavailable", "message": "此安裝沒有 Git 資料，無法追蹤 GitHub 版本。"}
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-remote", "--tags", "origin", "refs/tags/v*"],
+            capture_output=True, text=True, check=True, timeout=timeout,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return {"state": "unavailable", "message": "無法連線 GitHub 或讀取 origin 的版本標籤，請檢查網路與 Git 設定。"}
+    versions = []
+    for line in result.stdout.splitlines():
+        match = VERSION_TAG.search(line)
+        if match:
+            versions.append(tuple(map(int, match.groups())))
+    if not versions:
+        return {"state": "unavailable", "message": "origin 尚無 vX.Y.Z 版本標籤。"}
+    newest = max(versions)
+    latest = ".".join(map(str, newest))
+    if newest > tuple(map(int, current.groups())):
+        return {"state": "available", "current": current_version, "latest": latest,
+                "message": f"GitHub 已有 v{latest}；目前安裝為 v{current_version}。"}
+    return {"state": "current", "current": current_version, "latest": latest,
+            "message": f"目前安裝 v{current_version}；GitHub 最新標籤為 v{latest}。"}
 
 
 def source_snapshot(root):

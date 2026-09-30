@@ -45,17 +45,19 @@ function hideToast() {
 }
 function status(message,error=false) {$('statusText').textContent=message;$('connectionDot').classList.toggle('error',error);}
 function setUpdateIndicators(count){
-  const visible=Number.isInteger(count)&&count>0;
+  const local=Number.isInteger(count)&&count>0,remote=state.remoteVersion?.state==='available',visible=local||remote;
   for(const id of ['updateDot','settingsUpdateNavDot','settingsUpdateCardDot'])if($(id))$(id).hidden=!visible;
-  $('desktopUpdateCard')?.classList.toggle('has-update',visible);
-  $('settings').title=count===null?'開啟設定中心；暫時無法檢查更新':count>0?`開啟設定中心；有新更新：${count} 個程式檔案已修改`:'開啟設定中心';
+  $('desktopUpdateCard')?.classList.toggle('has-update',local);
+  $('githubVersionCard')?.classList.toggle('has-update',remote);
+  $('settings').title=remote?'開啟設定中心；GitHub 有新版本':local?`開啟設定中心；${count} 個本機程式檔案已修改`:'開啟設定中心';
 }
+nativeCallbacks.remoteVersionStatus=snapshot=>{state.remoteVersion=snapshot;renderRemoteVersion(snapshot);setUpdateIndicators(state.desktopUpdate?.count??0)};
 nativeCallbacks.updateStatus=count=>{
   setUpdateIndicators(count);
   if(state.desktopUpdate?.state==='updating'||state.desktopUpdate?.state==='restarting')return;
   if(count===null)renderDesktopUpdate({state:'unavailable',count:null,changes:[],blockers:[],message:'暫時無法讀取程式檔案，請稍後再試。'});
   else if(count>0&&state.desktopUpdate?.count!==count)renderDesktopUpdate({state:'available',count,changes:[],blockers:[],message:`偵測到 ${count} 個程式檔案有新修改。`});
-  else if(count===0&&state.desktopUpdate?.state==='available')renderDesktopUpdate({state:'current',count:0,changes:[],blockers:[],message:'目前執行中的程式已是最新狀態。'});
+  else if(count===0&&state.desktopUpdate?.state==='available')renderDesktopUpdate({state:'current',count:0,changes:[],blockers:[],message:'執行中的程式與本機檔案一致。'});
 };
 async function api(path,method='GET',body) {
   if(method==='POST'&&state.project&&/\/(review|assign)$/.test(path))body={...body,delta_base:state.project.revision};
@@ -98,7 +100,7 @@ function updateCvatSetupText({busy=state.cvatPollBusy,startedAt=state.cvatPollSt
 function button(text,className='secondary',click) {const b=document.createElement('button');b.type='button';b.textContent=text;b.className=className;if(click)b.onclick=click;return b;}
 function element(tag,text,className) {const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
 
-const {settingValue, saveSetting, applySettings, showSettingsPage, openSettings, closeSettings, renderSettingsSummary, parseNativeResult, invokeNativeUpdate, renderDesktopUpdate, refreshDesktopUpdate, runDesktopUpdate, loadModelCatalog, catalogState, renderModelCatalog, renderCatalogDetail, installModelComponent}=createSettingsPage({$,state,api,element,button,safe,switchStage,toast,setUpdateIndicators,nativeCallbacks,
+const {settingValue, saveSetting, applySettings, showSettingsPage, openSettings, closeSettings, renderSettingsSummary, parseNativeResult, invokeNativeUpdate, renderRemoteVersion, refreshRemoteVersion, renderDesktopUpdate, refreshDesktopUpdate, runDesktopUpdate, loadModelCatalog, catalogState, renderModelCatalog, renderCatalogDetail, installModelComponent}=createSettingsPage({$,state,api,element,button,safe,switchStage,toast,setUpdateIndicators,nativeCallbacks,
   renderTraining:(...args)=>renderTraining(...args),loadTraining:(...args)=>loadTraining(...args)});
 
 let savePhase='saved';
@@ -1065,7 +1067,7 @@ $('settings').onclick=()=>safe(()=>openSettings());$('closeSettings').onclick=cl
 document.querySelectorAll('[data-settings-page]').forEach(item=>item.onclick=()=>showSettingsPage(item.dataset.settingsPage));
 $('settingScale').onchange=event=>saveSetting('scale',event.target.value);$('settingDevice').onchange=event=>{saveSetting('device',event.target.value);$('trainingDevice').value=event.target.value;renderTraining()};
 $('modelCatalogSearch').oninput=renderModelCatalog;$('modelCatalogFilter').onchange=renderModelCatalog;$('refreshModelCatalog').onclick=()=>safe(()=>loadModelCatalog(true));
-$('goModelUpdates').onclick=()=>showSettingsPage('models');$('openDesktopUpdater').onclick=()=>safe(runDesktopUpdate);
+$('goModelUpdates').onclick=()=>showSettingsPage('models');$('openDesktopUpdater').onclick=()=>safe(runDesktopUpdate);$('checkGithubVersion').onclick=()=>safe(()=>refreshRemoteVersion(true));
 $('copyDiagnostics').onclick=()=>safe(async()=>{await navigator.clipboard.writeText($('diagnosticSummary').textContent);toast('診斷摘要已複製。')});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('settingsShell').hidden){event.preventDefault();closeSettings();return}if(event.key==='Escape'&&!$('releaseDrawer').hidden){event.preventDefault();closeReleaseDrawer();return}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();if(state.asset&&!state.busy)safe(()=>saver.flush())}});
 

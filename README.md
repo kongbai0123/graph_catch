@@ -78,6 +78,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bootstrap.ps1
 
 ### 更新既有安裝
 
+工作台「設定 → 更新與版本」會追蹤 GitHub 的版本標籤並提示新版；下載新版仍須在關閉工作台後於專案資料夾執行以下指令。「本機程式檔案」區塊只負責套用磁碟上已有的原始碼變更。
+
 關閉工作台，更新原始碼並同步主程式依賴：
 
 ```powershell

@@ -8,10 +8,26 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from workbench.desktop_update import changed_sources, source_snapshot, validate_sources, missing_runtime_requirements
+from workbench.desktop_update import changed_sources, github_version_status, source_snapshot, validate_sources, missing_runtime_requirements
 
 
 class DesktopUpdateTests(unittest.TestCase):
+    def test_github_version_check_distinguishes_remote_tags_from_local_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / '.git').mkdir()
+            tags = ('abc\trefs/tags/v2.21.1\n'
+                    'def\trefs/tags/v2.22.0\n'
+                    'ghi\trefs/tags/v2.22.0^{}\n'
+                    'jkl\trefs/tags/v2.22.0-rc1\n')
+            with patch('workbench.desktop_update.subprocess.run', return_value=SimpleNamespace(stdout=tags)) as run:
+                old = github_version_status(root, '2.21.1')
+                current = github_version_status(root, '2.22.0')
+            self.assertEqual((old['state'], old['latest']), ('available', '2.22.0'))
+            self.assertEqual(current['state'], 'current')
+            self.assertEqual(run.call_args.kwargs['timeout'], 8)
+            self.assertEqual(github_version_status(root.parent, '2.21.1')['state'], 'unavailable')
+
     def test_in_page_update_status_and_start_do_not_open_a_dialog(self):
         from workbench.desktop import MainWindow
 

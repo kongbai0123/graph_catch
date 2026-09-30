@@ -17,7 +17,8 @@ from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngin
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from .server import APP_ROOT, WorkbenchService
-from .desktop_update import changed_sources, schedule_restart, source_snapshot, validate_sources, missing_runtime_requirements
+from . import __version__
+from .desktop_update import changed_sources, github_version_status, schedule_restart, source_snapshot, validate_sources, missing_runtime_requirements
 
 
 class DialogBridge(QObject):
@@ -143,6 +144,16 @@ class WorkbenchBridge(QObject):
     def applyUpdate(self):
         return json.dumps(self.window.apply_update(), ensure_ascii=False)
 
+    @Slot(result=str)
+    def remoteVersionStatus(self):
+        self.window.start_remote_version_check()
+        return json.dumps(self.window.remote_version_status, ensure_ascii=False)
+
+    @Slot(result=str)
+    def checkRemoteVersion(self):
+        self.window.start_remote_version_check(force=True)
+        return json.dumps(self.window.remote_version_status, ensure_ascii=False)
+
 
 class MainWindow(QMainWindow):
     def __init__(self, service, bridge):
@@ -153,6 +164,10 @@ class MainWindow(QMainWindow):
         self.update_pending = False
         self.source_baseline = source_snapshot(APP_ROOT)
         self.pending_source_changes = []
+        self.remote_version_status = {"state": "checking", "message": "正在檢查 GitHub 版本標籤…"}
+        self.remote_version_checked_at = 0.0
+        self.remote_version_thread = None
+        self.remote_version_result = None
         self.camera_shutdown = None
         self.setWindowTitle("Vision Workbench｜影像資料工作台")
         self.resize(1520, 960)
@@ -207,6 +222,32 @@ class MainWindow(QMainWindow):
         self.update_timer = QTimer(self)
         self.update_timer.setInterval(2500)
         self.update_timer.timeout.connect(self.check_update_indicator)
+        self.update_timer.timeout.connect(self.poll_remote_version_check)
+
+    def start_remote_version_check(self, force=False):
+        if self.remote_version_thread and self.remote_version_thread.is_alive():
+            return
+        if self.remote_version_result is not None:
+            self.poll_remote_version_check()
+        if not force and time.monotonic() - self.remote_version_checked_at < 600:
+            return
+        self.remote_version_status = {"state": "checking", "message": "正在檢查 GitHub 版本標籤…"}
+        self.page.runJavaScript(f"window.workbenchRemoteVersionStatus?.({json.dumps(self.remote_version_status, ensure_ascii=False)})")
+
+        def check():
+            self.remote_version_result = github_version_status(APP_ROOT, __version__)
+
+        self.remote_version_thread = threading.Thread(target=check, daemon=True)
+        self.remote_version_thread.start()
+
+    def poll_remote_version_check(self):
+        if self.remote_version_result is not None:
+            self.remote_version_status = self.remote_version_result
+            self.remote_version_result = None
+            self.remote_version_checked_at = time.monotonic()
+            self.page.runJavaScript(f"window.workbenchRemoteVersionStatus?.({json.dumps(self.remote_version_status, ensure_ascii=False)})")
+        elif time.monotonic() - self.remote_version_checked_at >= 600:
+            self.start_remote_version_check()
 
     def toggle_fullscreen(self):
         """Switch the native workbench between full-screen and windowed mode."""
@@ -335,7 +376,7 @@ class MainWindow(QMainWindow):
                     "message":"暫時無法讀取程式檔案，請稍後再試。"}
         if not changes:
             return {"state":"current", "count":0, "changes":[], "blockers":[],
-                    "message":"目前執行中的程式已是最新狀態。"}
+                    "message":"目前執行中的程式與本機檔案一致。"}
         blockers=[]
         if any(name.startswith("requirements") for name in changes):
             missing=missing_runtime_requirements(APP_ROOT)
@@ -382,7 +423,7 @@ class MainWindow(QMainWindow):
             changes=changed_sources(self.source_baseline,source_snapshot(APP_ROOT))
             if not changes:
                 self.update_pending=False
-                self.notify_update_progress("current","目前執行中的程式已是最新狀態。");return
+                self.notify_update_progress("current","目前執行中的程式與本機檔案一致。");return
             validate_sources(APP_ROOT);schedule_restart(APP_ROOT)
             self.notify_update_progress("restarting","更新已驗證，工作台正在重新啟動…")
             self.allow_close=True;QTimer.singleShot(250,QApplication.closeAllWindows)
@@ -417,6 +458,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "介面載入失敗", "請檢查 data/logs/workbench.log 後重新啟動。專案資料仍保留在本機。")
         else:
             self.check_update_indicator()
+            self.start_remote_version_check()
             # ES modules may finish installing the callback just after loadFinished.
             # Retry once, then keep the indicator current in every desktop session.
             QTimer.singleShot(400, self.check_update_indicator)

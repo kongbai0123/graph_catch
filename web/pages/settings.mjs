@@ -10,7 +10,10 @@ function applySettings(){document.body.style.zoom=settingValue('scale');if($('se
 function showSettingsPage(page='general'){
   state.settingsPage=page;document.querySelectorAll('[data-settings-page]').forEach(item=>item.classList.toggle('active',item.dataset.settingsPage===page));
   document.querySelectorAll('[data-settings-panel]').forEach(item=>item.hidden=item.dataset.settingsPanel!==page);
-  if(page==='updates')void refreshDesktopUpdate().catch(error=>renderDesktopUpdate({state:'unavailable',count:null,changes:[],message:error.message}));
+  if(page==='updates'){
+    void refreshDesktopUpdate().catch(error=>renderDesktopUpdate({state:'unavailable',count:null,changes:[],message:error.message}));
+    void refreshRemoteVersion().catch(error=>renderRemoteVersion({state:'unavailable',message:error.message}));
+  }
 }
 async function openSettings(page='general',modelKey=null){
   state.settingsFocus=document.activeElement;$('settingsShell').hidden=false;showSettingsPage(page);applySettings();
@@ -33,11 +36,26 @@ function parseNativeResult(value){
   return value&&typeof value==='object'?value:{state:'unavailable',count:null,changes:[],message:'桌面更新服務沒有回應。'};
 }
 function invokeNativeUpdate(method){return new Promise(resolve=>state.nativeBridge[method](value=>resolve(parseNativeResult(value))))}
+function renderRemoteVersion(snapshot){
+  if(!snapshot)return;
+  state.remoteVersion=snapshot;
+  const names={checking:'檢查中',available:'發現新版',current:'版本已同步',unavailable:'無法檢查'};
+  const badge=$('githubVersionBadge');badge.textContent=names[snapshot.state]||'尚未檢查';
+  badge.className='settings-state '+(snapshot.state==='available'?'warning':snapshot.state==='unavailable'?'error':'ready');
+  $('githubVersionStatus').textContent=snapshot.message||'尚未檢查 GitHub 版本。';
+  $('githubVersionCurrent').textContent=snapshot.current?`目前 v${snapshot.current}`:'目前版本讀取中';
+  $('githubVersionLatest').textContent=snapshot.latest?`GitHub v${snapshot.latest}`:'GitHub 版本待確認';
+  setUpdateIndicators(state.desktopUpdate?.count??0);
+}
+async function refreshRemoteVersion(force=false){
+  if(!state.nativeBridge?.remoteVersionStatus){renderRemoteVersion({state:'unavailable',message:'GitHub 版本檢查只在 Git 桌面安裝版提供。'});return state.remoteVersion}
+  const snapshot=await invokeNativeUpdate(force&&state.nativeBridge.checkRemoteVersion?'checkRemoteVersion':'remoteVersionStatus');renderRemoteVersion(snapshot);return snapshot;
+}
 function renderDesktopUpdate(snapshot){
   if(!snapshot)return;
   state.desktopUpdate={...(state.desktopUpdate||{}),...snapshot};const update=state.desktopUpdate;
   setUpdateIndicators(update.count);
-  const statusNames={available:'有可用更新',blocked:'等待處理',updating:'正在更新',restarting:'正在重啟',current:'已是最新',unavailable:'無法檢查',error:'更新失敗'};
+  const statusNames={available:'本機有變更',blocked:'等待處理',updating:'正在更新',restarting:'正在重啟',current:'本機已同步',unavailable:'無法檢查',error:'更新失敗'};
   const badge=$('desktopUpdateBadge');badge.textContent=statusNames[update.state]||'尚未檢查';badge.className='settings-state '+(update.state==='current'?'ready':update.state==='available'||update.state==='blocked'?'warning':update.state==='unavailable'||update.state==='error'?'error':'ready');
   $('desktopUpdateStatus').textContent=update.message||'尚未檢查更新。';
   const changes=Array.isArray(update.changes)?update.changes:[],details=$('desktopUpdateDetails');
@@ -46,7 +64,7 @@ function renderDesktopUpdate(snapshot){
   if(update.count>0&&!changes.length)$('desktopUpdateFiles').append(element('li','按下更新後會重新確認並列出檔案。'));
   const blockers=Array.isArray(update.blockers)?update.blockers:[],blocker=$('desktopUpdateBlockers');blocker.hidden=!blockers.length;blocker.textContent=blockers.join('\n');
   const action=$('openDesktopUpdater'),running=['updating','restarting'].includes(update.state);action.disabled=running;
-  action.textContent=update.state==='available'?'套用更新並重新啟動':update.state==='blocked'?'重新檢查':running?'更新中…':update.state==='current'?'再次檢查':'檢查更新';
+  action.textContent=update.state==='available'?'套用本機變更並重新啟動':update.state==='blocked'?'重新檢查':running?'更新中…':update.state==='current'?'再次檢查':'檢查本機變更';
 }
 async function refreshDesktopUpdate(){
   if(!state.nativeBridge?.updateStatus){renderDesktopUpdate({state:'unavailable',count:null,changes:[],message:'本機程式更新只在 Windows 桌面版提供。'});return state.desktopUpdate}
@@ -56,7 +74,7 @@ async function runDesktopUpdate(){
   if(!state.nativeBridge?.applyUpdate)throw Error('本機程式更新只在 Windows 桌面版提供。');
   const snapshot=await refreshDesktopUpdate();
   if(snapshot.state!=='available'){
-    if(snapshot.state==='current')toast('目前執行中的程式已是最新狀態。');
+    if(snapshot.state==='current')toast('執行中的程式與本機檔案一致。');
     else if(snapshot.state==='blocked')toast(snapshot.blockers?.[0]||snapshot.message,true);
     else if(snapshot.state!=='updating')toast(snapshot.message||'目前無法開始更新。',true);
     return;
@@ -99,5 +117,5 @@ async function installModelComponent(componentId){
   state.settingsJob=null;$('settingsJobProgress').hidden=true;if(current.state!=='succeeded')throw Error(current.error||current.message||'安裝未完成');
   await loadModelCatalog(true);if(state.project)await loadTraining({quiet:true});$('settingsJobText').textContent=`${component.name} 已安裝並通過檢查`;toast(`${component.name} 已可使用。`);
 }
-return {settingValue, saveSetting, applySettings, showSettingsPage, openSettings, closeSettings, renderSettingsSummary, parseNativeResult, invokeNativeUpdate, renderDesktopUpdate, refreshDesktopUpdate, runDesktopUpdate, loadModelCatalog, catalogState, renderModelCatalog, renderCatalogDetail, installModelComponent};
+return {settingValue, saveSetting, applySettings, showSettingsPage, openSettings, closeSettings, renderSettingsSummary, parseNativeResult, invokeNativeUpdate, renderRemoteVersion, refreshRemoteVersion, renderDesktopUpdate, refreshDesktopUpdate, runDesktopUpdate, loadModelCatalog, catalogState, renderModelCatalog, renderCatalogDetail, installModelComponent};
 }
