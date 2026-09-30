@@ -164,3 +164,10 @@
 #model-panel-comparison>label{margin:8px 0}.comparison-single>summary{padding:6px 0}
 #model-panel-comparison h3{margin:12px 0 6px}.comparison-gallery>.field-note{margin:4px 0}
 .batch-card .text-button{padding:5px 0}
+.phase-actions{display:flex;align-items:center;gap:15px;margin-left:auto;flex:0 0 auto;white-space:nowrap}
+.phase-actions .text-button{padding:5px 0}
+.portable-export-hint{margin:-8px 0 20px;padding:11px 14px;border:1px solid #35685f;border-left:3px solid var(--accent);border-radius:5px;background:#142c2b;color:#c8e8e1;font-size:12px}
+.export-record-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}
+.export-record{flex-wrap:wrap}
+.export-record>div:first-child{min-width:min(100%,280px);flex:1}
+.export-archive-path{display:block;overflow-wrap:anywhere}

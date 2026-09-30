@@ -704,6 +704,20 @@ def _yolo_root(path):
     return root
 
 
+def _export_root_for_image(path):
+    """Find an annotation package when only an image inside it was selected."""
+    for root in path.parents:
+        relative = path.relative_to(root)
+        if not relative.parts or relative.parts[0] != 'images':
+            continue
+        if (any((root / name).is_file() for name in YOLO_MARKERS)
+                or (root / 'project.json').is_file()
+                or (root / 'dataset.json').is_file()
+                or (root / 'annotations.json').is_file()):
+            return root
+    return None
+
+
 def _plan_source(path, manifests):
     """Name the parse unit a dropped path belongs to, without decoding any image."""
     working_root = _source_working_root(path, manifests)
@@ -715,6 +729,9 @@ def _plan_source(path, manifests):
     if path.is_file() and suffix in {'.yaml', '.yml', '.txt'}:
         return 'folder', _yolo_root(path)
     if path.is_file() and suffix in IMAGE_EXTENSIONS:
+        dataset_root = _export_root_for_image(path)
+        if dataset_root is not None:
+            return 'folder', dataset_root
         parent_manifest = path.parent / 'manifest.json'
         if parent_manifest.is_file() and _cached_json(parent_manifest, manifests).get('dataset_type') == FLAT_TYPE:
             return 'folder', path.parent

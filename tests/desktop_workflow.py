@@ -288,6 +288,14 @@ def main():
             exported=project['exports'][0]
             assert Path(exported['path']).is_dir() and Path(exported['zip_path']).is_file()
             capture("07-validated-export")
+            click("[data-stage='annotate']")
+            click('#dataExport')
+            wait("!document.querySelector('#export').hidden && document.querySelector('#exportFormat').value==='yolo_detection'")
+            assert js("document.querySelector('#backFromExport').innerText.includes('標註編輯')")
+            assert js("!document.querySelector('#portableExportHint').hidden")
+            assert js("document.querySelector('#exportHistory').innerText.includes('ZIP 所在資料夾')")
+            click('#backFromExport')
+            wait("!document.querySelector('#annotate').hidden")
             # Reload entire page; choose the saved project, all data must remain.
             js("document.documentElement.dataset.workflowReload='old'")
             page.triggerAction(QWebEnginePage.WebAction.Reload)

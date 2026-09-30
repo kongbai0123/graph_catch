@@ -6,8 +6,11 @@ function renderExport() {
   for(const record of [...(state.project?.exports||[])].reverse()) {
     const row=element('article',undefined,'export-record'),body=element('div');
     body.append(element('b',`${record.version||record.name||'匯出版本'} · ${formatNames[record.format]||record.format||''}`),element('p',record.path||record.output_path||''),element('small',date(record.created_at||record.timestamp)));
-    const open=button('開啟資料夾 ↗','secondary',()=>safe(()=>api('/api/open-folder','POST',{project_id:state.project.id,...(record.id?{export_id:record.id}:{})})));
-    row.append(body,open);list.append(row);
+    if(record.zip_path)body.append(element('small',`ZIP：${record.zip_path}`,'export-archive-path'));
+    const actions=element('div',undefined,'export-record-actions');
+    actions.append(button('開啟資料夾 ↗','secondary',()=>safe(()=>api('/api/open-folder','POST',{project_id:state.project.id,export_id:record.id}))));
+    if(record.zip_path)actions.append(button('ZIP 所在資料夾 ↗','secondary',()=>safe(()=>api('/api/open-folder','POST',{project_id:state.project.id,export_id:record.id,export_archive:true}))));
+    row.append(body,actions);list.append(row);
   }
   if(!list.children.length)list.append(element('p','尚無匯出版本。完成審核後，執行驗證並建立第一個版本。','muted'));
 }
@@ -119,7 +122,7 @@ async function exportProject() {
   if(report?.losses?.length&&!$('acknowledgeLoss').checked)throw Error('請閱讀轉換損失報告，勾選接受後再建立匯出版本。');
   const version=$('exportVersion').value.trim();if(!version)throw Error('請輸入版本名稱。');
   const result=await pollJob(await api(projectPath('/export'),'POST',{format,version,tolerance:0,acknowledge_loss:$('acknowledgeLoss').checked,...($('outputPath').value.trim()?{output_dir:$('outputPath').value.trim()}:{})}));
-  renderValidation(result);await refreshProject();renderExport();toast('匯出版本已建立，可從下方紀錄開啟資料夾。');
+  renderValidation(result);await refreshProject();renderExport();toast('匯出版本已建立；跨主機使用請複製 ZIP 檔。');
 }
 return {renderExport, openReleaseDrawer, closeReleaseDrawer, renderBatchTable, autoSplitProject, resetValidation, renderValidation, renderValidationView, validateProject, exportProject};
 }

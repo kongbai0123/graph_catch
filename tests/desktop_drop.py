@@ -36,8 +36,10 @@ def main():
             'categories':[{'id':1,'name':'COCO物件'}], 'annotations':[{'id':1,'image_id':1,'category_id':1,'bbox':[10,10,30,20],'area':600,'iscrowd':0}]}),encoding='utf-8')
         yolo = root / 'YOLO'; (yolo / 'images/train').mkdir(parents=True); (yolo / 'labels/train').mkdir(parents=True)
         Image.new('RGB', (100, 80), 'red').save(yolo / 'images/train/frame.png')
+        Image.new('RGB', (100, 80), 'green').save(yolo / 'images/train/frame2.png')
         (yolo / 'data.yaml').write_text('names: [YOLO-object]\n', encoding='utf-8')
         (yolo / 'labels/train/frame.txt').write_text('0 0.5 0.5 0.4 0.4\n', encoding='utf-8')
+        (yolo / 'labels/train/frame2.txt').write_text('0 0.5 0.5 0.4 0.4\n', encoding='utf-8')
         bad = root / 'unsupported.xyz'; bad.write_text('unsupported')
         checkpoint = root / '外部 權重.pt'; checkpoint.write_bytes(b'synthetic; never loaded by torch')
         def inspect(command, *_args, **_kwargs):
@@ -99,19 +101,23 @@ def main():
             window.view.setZoomFactor(1);QTest.qWait(100)
             native_drag([yolo/'labels/train/frame.txt']);confirm_import()
             wait("document.querySelector('#acquireTotal').textContent==='3' && !window.workbenchState().busy")
+            native_drag([yolo/'images/train/frame2.png'])
+            wait("document.querySelector('#formDialog').open && document.querySelector('#dialogBody').textContent.includes('1 個標註')")
+            confirm_import()
+            wait("document.querySelector('#acquireTotal').textContent==='4' && !window.workbenchState().busy")
             pid=service.store.list_projects()[0]['id']
             snapshot=service.store.snapshot(pid)
-            assert sorted(s['label'] for a in snapshot['assets'] for s in a['shapes'])==['COCO物件','YOLO-object','標籤']
+            assert sorted(s['label'] for a in snapshot['assets'] for s in a['shapes'])==['COCO物件','YOLO-object','YOLO-object','標籤']
             native_drag([annotation]);confirm_import()
             wait("!window.workbenchState().busy && document.querySelector('#importReport').innerText.includes('重複')")
-            assert service.store.get_project(pid)['stats']['total']==3
+            assert service.store.get_project(pid)['stats']['total']==4
             native_drag([bad])
             # Unsupported sources are reported inside the preview, so nothing is imported on cancel.
             wait("document.querySelector('#formDialog').open && document.querySelector('#dialogBody').textContent.includes('格式不支援')")
             js("document.querySelector('#cancelDialog').click()")
             wait("!document.querySelector('#formDialog').open && !window.workbenchState().busy")
             assert window.page.url().toString().rstrip('/')==service.url.rstrip('/')
-            assert service.store.get_project(pid)['stats']['total']==3
+            assert service.store.get_project(pid)['stats']['total']==4
             js("document.querySelector('#toast').hidden=true")
             QTest.qWait(100);window.view.grab().save(str(output/'imported.png'))
             # The model import dialog takes the drop from the acquisition zone below it.
@@ -138,9 +144,9 @@ def main():
             assert len(models)==1 and models[0]['source']['filename']=='外部 權重.pt',models
             # A dropped checkpoint is copied, never moved out of the user's folder.
             assert checkpoint.is_file()
-            (output/'report.json').write_text(json.dumps({'success':True,'images':3,'labels':3,
+            (output/'report.json').write_text(json.dumps({'success':True,'images':4,'labels':4,
                 'checks':['native folder drop','Chinese/space paths','drag highlight/leave','outside ignored',
-                    'multi-file COCO with image first','125% zoom mapping','YOLO TXT pairing','LabelMe JSON duplicate',
+                    'multi-file COCO with image first','125% zoom mapping','YOLO TXT pairing','YOLO image pairing','LabelMe JSON duplicate',
                     'unsupported format reported','no file navigation','model import dialog drop','toast above modal dialog']},ensure_ascii=False,indent=2),encoding='utf-8')
             print('NATIVE_DROP_IMPORT_OK',flush=True)
         finally:

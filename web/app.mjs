@@ -162,6 +162,7 @@ function updateNavigation() {
   $('home').disabled=state.busy||state.transitioning;
   $('projectName').disabled=!state.project||state.busy||state.transitioning;
   $('openProjectFolder').disabled=!state.project||state.busy;
+  $('dataExport').disabled=!state.project||state.busy||state.transitioning;
   $('runAI').disabled=!state.asset||state.busy||state.transitioning;
   updateAcquisitionControls();
 }
@@ -336,7 +337,10 @@ async function switchStage(stage) {
     if(stage==='review'){await refreshProject();const ids=new Set(state.project.assets.map(a=>a.id));state.reviewSelection=new Set([...state.reviewSelection].filter(id=>ids.has(id)));renderReview();$('review').scrollTop=state.reviewScroll||0;void checkReviewYoloCompatibility().catch(error=>toast(error.message,true));}
     if(stage==='split'){await refreshProject();await loadTraining();await renderSplitPage();}
     if(stage==='train'||stage==='models')await loadTraining();
-    if(stage==='export'){await refreshProject();renderExport();}
+    if(stage==='export'){
+      $('backFromExport').textContent=state.exportReturnStage==='annotate'?'← 返回標註編輯':state.exportReturnStage==='models'?'← 返回評估與模型':'← 返回上一頁';
+      await refreshProject();renderExport();
+    }
   } finally {state.transitioning=false;editor.locked=false;updateNavigation();editor.render();}
 }
 async function openProject(id) {
@@ -348,7 +352,7 @@ async function openProject(id) {
     const project=await api(`/api/projects/${id}`);
     clearTimeout(state.trainingTimer);state.trainingTimer=null;state.training=null;state.selectedRun=null;state.selectedModel=null;state.yoloCompatibility=null;state.yoloCompatibilitySignature='';state.reviewYoloCompatibility=null;state.reviewYoloCompatibilityLoading=false;trainingMonitor.reset();trainingParameters.reset();
     await workflowDraft.load(id);
-    state.project=project;state.asset=null;saver.load(null);editor.clear();state.reviewSelection.clear();state.acquireSelection.clear();
+    state.project=project;state.asset=null;state.exportReturnStage=null;$('portableExportHint').hidden=true;saver.load(null);editor.clear();state.reviewSelection.clear();state.acquireSelection.clear();
     $('shapeLabel').value='';$('cameraTargetLabel').value='';
     state.reviewPage=0;state.reviewScroll=0;$('reviewSearch').value='';$('reviewFilter').value='pending';$('reviewAnnotationFilter').value='all';$('reviewReasonFilter').value='';
     $('projectName').textContent=project.name;$('projectName').title=project.name;updateClassList();
@@ -825,21 +829,23 @@ function readable(value) {
 function showImportReport(id,result) {
   const report=$(id);report.hidden=false;report.replaceChildren();
   const added=result?.imported??result?.added??result?.count??result?.assets?.length??result?.records?.length;
-  report.append(element('strong',`匯入已完成${added!==undefined?' · '+added+' 張影像':''}`));
+  report.append(element('strong',`匯入已完成${added!==undefined?' · 新增 '+added+' 張影像':''}`));
+  if(result?.updated)report.append(element('div',`${result.updated} 張既有圖片已補入標註，請重新審核。`));
   const issues=result?.issues||result?.report?.issues||[];
   for(const issue of issues)report.append(element('div',readable(issue)));
   const conflicts=result?.conflicts||[];
   if(result?.duplicates)report.append(element('div',`${result.duplicates} 張重複原圖已略過。`));
   if(Array.isArray(conflicts))for(const conflict of conflicts)report.append(element('div',`來源差異：${readable(conflict)}`));
   else if(conflicts)report.append(element('div',`來源差異：${readable(conflicts)}`));
-  if(!issues.length&&!conflicts.length&&!result?.duplicates)report.append(element('div','未回報匯入問題。'));
+  if(!issues.length&&!conflicts.length&&!result?.duplicates&&!result?.updated)report.append(element('div','未回報匯入問題。'));
 }
 async function afterAcquisition(result,reportId='importReport') {
   await refreshProject();showImportReport(reportId,result);
-  if(!state.asset&&state.project.assets.length)await loadAsset(state.project.assets[0].id);
+  if(state.asset&&result?.updated_asset_ids?.includes(state.asset.id))await loadAsset(state.asset.id);
+  else if(!state.asset&&state.project.assets.length)await loadAsset(state.project.assets[0].id);
   await loadProjects();
   const added=result?.imported??result?.added??result?.count;
-  status(`${added!==undefined?'已加入 '+number(added)+' 張影像 · ':''}專案共 ${number(state.project.assets.length)} 張`);
+  status(`${added!==undefined?`新增 ${number(added)} 張影像${result?.updated?`、補入 ${number(result.updated)} 張標註`:''} · `:''}專案共 ${number(state.project.assets.length)} 張`);
 }
 async function importPaths(paths) {
   if(!paths.length)throw Error('請選擇檔案或輸入至少一個完整路徑。');
@@ -923,6 +929,15 @@ bind('home',()=>switchStage('library'));bind('newProject',createProject);bind('n
 bind('refreshProjects',loadProjects);$('projectSearch').oninput=renderProjects;
 bind('projectName',renameProject);bind('manageClasses',manageClasses);
 bind('openProjectFolder',()=>api('/api/open-folder','POST',{project_id:state.project.id}));
+bind('dataExport',async()=>{
+  if(state.stage==='export')return;
+  state.exportReturnStage=state.stage;
+  $('exportFormat').value='yolo_detection';
+  $('acknowledgeLoss').checked=false;
+  resetValidation('請執行驗證，確認 YOLO 偵測格式與已核准標註。');
+  $('portableExportHint').hidden=false;
+  await switchStage('export');
+});
 bind('goAnnotate',()=>switchStage('annotate'));bind('addMore',()=>switchStage('acquire'));
 $('selectAllAssets').onchange=()=>{for(const asset of (state.project?.assets||[]))if($('selectAllAssets').checked)state.acquireSelection.add(asset.id);else state.acquireSelection.delete(asset.id);renderAcquisitionAssets()};
 bind('deleteSelectedAssets',()=>confirmDeleteAssets((state.project?.assets||[]).filter(asset=>state.acquireSelection.has(asset.id))),{busy:true});
@@ -1033,7 +1048,8 @@ bind('trialImages',()=>startModelTrial('images'),{busy:true,task:'外部圖片�
 bind('trialVideo',()=>startModelTrial('video'),{busy:true,task:'完整影片模型試跑'});
 bind('runModelComparison',runModelComparison,{busy:true,task:'標註比對評估'});
 $('trialTimeline').oninput=event=>setTrialFrame(event.target.value);$('trialPlay').onclick=toggleTrialPlayback;$('trialConfidence').oninput=()=>{$('trialConfidenceValue').value=Number($('trialConfidence').value).toFixed(2);drawTrial()};
-bind('openExchange',()=>switchStage('export'));bind('backToModels',()=>switchStage('models'));
+bind('openExchange',async()=>{state.exportReturnStage='models';$('portableExportHint').hidden=true;await switchStage('export')});
+bind('backFromExport',()=>switchStage(state.exportReturnStage||'models'));
 $('backgroundTraining').onclick=()=>safe(()=>switchStage('train'));
 bind('chooseOutput',async()=>{const paths=await nativeChoose('output');if(paths.length)$('outputPath').value=paths[0]});
 $('exportFormat').onchange=()=>{$('formatDescription').textContent=formatDescriptions[$('exportFormat').value];$('acknowledgeLoss').checked=false;resetValidation('目標格式已變更，請重新執行驗證。')};

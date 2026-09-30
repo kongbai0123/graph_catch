@@ -685,19 +685,36 @@ class ProjectStore:
                                  source=dump(source), review_state=state, shapes=shapes))
             if progress:
                 progress(index+1, len(records))
-        added, duplicates, conflicts = [], [], []
+        added, updated, duplicates, conflicts = [], [], [], []
         with self.connection(project_id, write=True) as db:
             names = json.loads(db.execute("SELECT classes FROM project").fetchone()[0])
             for asset in prepared:
                 if not (folder / 'images' / asset['image_file']).is_file():
                     raise ConflictError('匯入期間圖片已被其他操作移除，請重新匯入')
-                existing = db.execute("SELECT id,name,shapes FROM assets WHERE sha256=?", (asset["sha256"],)).fetchone()
+                existing = db.execute("SELECT id,name,shapes,revision,source,split,batch_id FROM assets WHERE sha256=?", (asset["sha256"],)).fetchone()
                 if existing:
+                    old_shapes = json.loads(existing["shapes"])
+                    new_shapes = asset["shapes"]
+                    if not old_shapes and new_shapes:
+                        imported_source = json.loads(asset["source"])
+                        source = {**json.loads(existing["source"]), "annotation_import": imported_source}
+                        split = existing["split"] or asset["split"]
+                        batch_id = asset["batch_id"] if not existing["split"] and asset["split"] else existing["batch_id"]
+                        revision = existing["revision"] + 1
+                        db.execute("UPDATE assets SET shapes=?,revision=?,review_state='pending',source=?,split=?,batch_id=?,updated_at=? WHERE id=?",
+                                   (dump(new_shapes), revision, dump(source), split, batch_id, timestamp(), existing["id"]))
+                        self._history(db, existing["id"], revision, "import_annotations",
+                                      {"shapes": new_shapes, "review_state": "pending", "source": source})
+                        for shape in new_shapes:
+                            if shape["label"] not in names:
+                                names.append(shape["label"])
+                        updated.append(existing["id"])
+                        continue
                     duplicates.append(existing["id"])
                     # Same pixels cannot silently replace a user's annotations.
                     def semantic(rows):
                         return [{k:v for k,v in shape.items() if k not in {"id", "hidden"}} for shape in rows]
-                    if semantic(json.loads(existing["shapes"])) != semantic(asset["shapes"]):
+                    if semantic(old_shapes) != semantic(new_shapes):
                         conflicts.append(f"{asset['name']}：原圖已存在且標註不同，保留已存版本")
                     continue
                 now = timestamp()
@@ -717,7 +734,8 @@ class ProjectStore:
                 added.append(asset["id"])
             db.execute("UPDATE project SET classes=?", (dump(names),))
             self._touch(db)
-        return {"added":len(added), "asset_ids":added, "duplicates":len(duplicates), "conflicts":conflicts,
+        return {"added":len(added), "updated":len(updated), "asset_ids":added,
+                "updated_asset_ids":updated, "duplicates":len(duplicates), "conflicts":conflicts,
                 "project":self.get_project(project_id)}
 
     @staticmethod

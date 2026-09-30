@@ -33,6 +33,12 @@ class RegressionHardeningTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    @staticmethod
+    def latest_backup(path):
+        migrations = Path(__file__).parents[1] / 'workbench/migrations'
+        latest = max(int(item.name.split('_')[0]) for item in migrations.glob('*.sql'))
+        return path.with_suffix(f'.before-migration-{latest:04d}.backup')
+
     def legacy(self, *, good=True):
         path = self.root / 'legacy.db'
         db = sqlite3.connect(path)
@@ -60,7 +66,7 @@ class RegressionHardeningTests(unittest.TestCase):
             self.assertEqual(confirmation(db)['migration_audit'][0]['migration'], '0002')
             self.assertEqual(db.execute('SELECT COUNT(*) FROM annotation_blobs').fetchone()[0], 1)
             self.assertIsNotNone(db.execute('SELECT annotation_hash FROM history').fetchone()[0])
-            saved = path.with_suffix('.before-migration-0005.backup')
+            saved = self.latest_backup(path)
             with closing(sqlite3.connect(saved)) as backup:
                 self.assertEqual(backup.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
                 self.assertEqual(confirmation(backup), original)
@@ -93,7 +99,7 @@ class RegressionHardeningTests(unittest.TestCase):
             db.commit()
             migrate(db)
             self.assertEqual(older.read_bytes(), original_bytes)
-            self.assertTrue(path.with_suffix('.before-migration-0005.backup').exists())
+            self.assertTrue(self.latest_backup(path).exists())
             self.assertEqual(db.execute("SELECT COUNT(*) FROM asset_review WHERE asset_id='orphan'").fetchone()[0], 0)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM annotation_blobs WHERE hash='orphan'").fetchone()[0], 0)
 
@@ -101,7 +107,7 @@ class RegressionHardeningTests(unittest.TestCase):
         path, db, original = self.legacy()
         with closing(db):
             migrate(db)
-            backup = path.with_suffix('.before-migration-0005.backup')
+            backup = self.latest_backup(path)
             db.execute('UPDATE independence_reviews SET data=?', (dump(original),))
             db.commit()  # Simulate the previously shipped 0002 migration.
         before = path.read_bytes()
@@ -221,7 +227,7 @@ class RegressionHardeningTests(unittest.TestCase):
                 _status(self.root, run, epoch=epoch, batch=batch, phase='training', progress=batch / 313)
             _status(self.root, run, metrics={'epoch': epoch, 'loss': 1 / epoch})
         self.assertEqual(read_state(path)['batch'], 313)
-        self.assertLessEqual(len(path.with_name('events.jsonl').read_text().splitlines()), 200)
+        self.assertLessEqual(len(path.with_name('events.jsonl').read_text(encoding='utf-8').splitlines()), 200)
         self.assertLess(path.with_name('events.jsonl').stat().st_size, 2_000_000)
         sequence = read_state(path)['sequence']
         self.assertEqual(sequence, 31400)

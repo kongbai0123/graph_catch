@@ -109,6 +109,18 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual({r['batch_id'] for r in imported['records']}, {'batch-0', 'batch-1'})
         self.assertEqual({r['shapes'][0]['id'] for r in imported['records']}, {'mask-stable'})
 
+    def test_selecting_images_inside_export_keeps_companion_annotations(self):
+        for format_key in ('native', 'coco', 'yolo_detection', 'yolo_segmentation', 'jsonl', 'labelme'):
+            with self.subTest(format=format_key):
+                result = export_project(self.snapshot(), self.root / f'out-{format_key}',
+                                        format_key, acknowledge_loss=True)
+                images = sorted(Path(result['path']).glob('images/**/*.png'))
+                imported = import_sources([images[0]])
+                self.assertEqual(imported['issues'], [])
+                self.assertEqual(len(imported['records']), 1)
+                self.assertEqual(len(imported['records'][0]['shapes']), 1)
+                self.assertEqual(imported['records'][0]['shapes'][0]['label'], 'workpiece')
+
     def test_detection_bbox_recomputed_from_mask(self):
         snapshot = self.snapshot()
         snapshot['assets'][0]['shapes'][0].update(x=0, y=0, width=1, height=1)

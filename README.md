@@ -3,7 +3,7 @@
 Windows 桌面視覺資料工作台，整合影像採集、標註、審核、資料分割與模型訓練。專案資料與模型保存在本機，固定資料版本讓每次實驗的圖片、標註及增強設定可追溯。
 
 [![CI](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml)
-[![Version: 2.20.0](https://img.shields.io/badge/Version-2.20.0-45c6b1.svg)](CHANGELOG.md)
+[![Version: 2.21.1](https://img.shields.io/badge/Version-2.21.1-45c6b1.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D4.svg)](#快速開始)
 
@@ -29,7 +29,13 @@ Windows 桌面視覺資料工作台，整合影像採集、標註、審核、資
 - **外部模型匯入**：可從檔案總管拖曳或用檔案瀏覽器選擇 Ultralytics 相容的 YOLO／RT-DETR `.pt` 權重；驗證後用於圖片／影片試跑與預標註，並保留來源與類別資訊。
 - **模型中心**：以總覽、訓練設定、評估報告、辨識對照與外部試跑分頁呈現；評估可下載 JSON，Batch 對照可篩選 TP／FP／FN 並下載 PNG、JSON、CSV。
 - **模型試跑與比對**：模型清單、試跑與標註比對共用明確的目前版本；結果保留來源模型提示，預測標籤字體不低於 12px。
-- **資料交換**：COCO、YOLO、LabelMe、JSONL 與原生格式匯入／匯出，以及模型封裝匯出。
+- **資料匯出與匯入**：在「開啟資料夾」旁進入「資料匯出」，將已核准的圖片、標註與分割輸出為 COCO、YOLO、LabelMe、JSONL 或原生格式及可攜式 ZIP；匯入時可選整份資料夾，也可選資料集中的圖片並自動配對標註。
+
+## 跨主機搬移圖片與標註
+
+在來源主機按「資料匯出」，選擇格式、完成驗證並建立版本。進行 YOLO 偵測訓練時可選「YOLO · 物件偵測」；匯出會產生 `data.yaml`、`images/`、`labels/` 與 ZIP。將 ZIP 複製到另一台主機並**完整解壓縮**，即可用 `data.yaml` 訓練，或在 Vision Workbench 的「採集與匯入」選擇解壓後的資料夾。
+
+若只選資料集內的圖片，工作台會從上層資料集尋找配對標註；匯入預覽會顯示每張圖片的標註數。已先匯入但尚無標註的相同原圖，可再次匯入有標註的版本補入標註，圖片會回到待審核。已有不同標註的原圖不會被覆蓋，匯入結果會列出衝突。ZIP 是圖片與標註的交換封裝，不包含模型權重或完整工作台資料庫。
 
 ## 從資料審核到訓練設定
 

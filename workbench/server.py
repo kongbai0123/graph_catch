@@ -524,7 +524,13 @@ class Handler(BaseHTTPRequestHandler):
                     item = next((e for e in project["exports"] if e["id"] == payload["export_id"]), None)
                     if item is None:
                         raise FileNotFoundError("找不到匯出記錄")
-                    folder = Path(item["path"])
+                    if payload.get("export_archive"):
+                        archive = Path(item.get("zip_path") or "")
+                        if not archive.is_file():
+                            raise FileNotFoundError("找不到匯出 ZIP")
+                        folder = archive.parent
+                    else:
+                        folder = Path(item["path"])
                 elif payload.get("project_id"):
                     folder = self.app.store.directory(payload["project_id"])
                 else:

@@ -115,6 +115,21 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(result["conflicts"])
         self.assertEqual(self.store.get_asset(self.pid,asset["id"])["shapes"][0]["label"],"工件")
 
+    def test_import_annotations_fills_existing_empty_image_and_requires_review(self):
+        initial = self.store.add_assets(self.pid, [dict(path=self.image, shapes=[], batch_id='plain')])
+        asset_id = initial['asset_ids'][0]
+        self.store.review(self.pid, [asset_id], 'approved')
+        result = self.store.add_assets(self.pid, [dict(path=self.image, shapes=[self.shape],
+                                                       batch_id='labeled', split='train',
+                                                       source={'format': 'yolo'})])
+        self.assertEqual((result['added'], result['updated'], result['duplicates']), (0, 1, 0))
+        asset = self.store.get_asset(self.pid, asset_id)
+        self.assertEqual(asset['review_state'], 'pending')
+        self.assertEqual(asset['shapes'][0]['label'], '工件')
+        self.assertEqual(asset['split'], 'train')
+        self.assertEqual(asset['batch_id'], 'labeled')
+        self.assertIn('工件', self.store.get_project(self.pid)['classes'])
+
     def test_rle_holes_survive_review_restart_and_snapshot(self):
         import numpy as np
         mask = np.zeros((60,80),dtype=np.uint8)
