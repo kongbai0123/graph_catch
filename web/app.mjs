@@ -606,6 +606,9 @@ const cvatGuides={
   waiting_action:{title:'上一步沒有完成，環境未變更',steps:[
     '剛才的管理員確認沒有通過，所以沒有安裝任何東西。',
     '按「繼續準備」重試，跳出確認視窗時選「是」。']},
+  workspace_moved:{title:'工作台位置已變更',steps:[
+    'CVAT 的本機設定仍指向原本的工作台位置，不能直接沿用。',
+    '按「為目前位置重新準備」建立正確設定；既有工作台資料與舊 CVAT 環境不會被刪除。']},
   blocked:{title:'這台電腦目前無法安裝 CVAT',steps:[
     '需求：x64 的 Windows 10 22H2 或 Windows 11 23H2 以上、8 GB 以上記憶體，且 BIOS／UEFI 已啟用虛擬化。',
     '這不影響標註工作，可以直接按下方「返回內建編輯器」繼續使用。']},
@@ -658,6 +661,9 @@ function renderCvatStatus(snapshot) {
   if(snapshot.reboot_required){
     $('setupCvat').textContent='重新啟動後才能繼續';
     $('setupCvat').title='必須先重新啟動 Windows，回到此頁後這顆按鈕就會解鎖。';
+  } else if(snapshot.phase==='workspace_moved') {
+    $('setupCvat').textContent='為目前位置重新準備';
+    $('setupCvat').title='重新產生目前工作台位置使用的 CVAT 設定。';
   } else if(snapshot.resume) {
     $('setupCvat').textContent='繼續準備';
     $('setupCvat').title='Windows 已重啟，點此繼續。';
@@ -766,20 +772,21 @@ function renderAcquisitionTask(task) {
   if(acquisitionTask!==task)return;
   const panel=$('acquisitionTask');panel.hidden=false;panel.classList.toggle('paused',task.paused);panel.classList.toggle('stopping',task.stopping);panel.classList.remove('completing');
   $('acquisitionTaskTitle').textContent=task.title;$('acquisitionTaskMessage').textContent=taskStage(task.message);$('acquisitionTaskElapsed').textContent=task.timing.text();
-  $('acquisitionTaskProgress').hidden=true;
+  const progress=Number.isFinite(task.progress)?Math.max(0,Math.min(100,task.progress)):0;
+  $('acquisitionTaskProgress').hidden=false;$('acquisitionTaskProgress').value=progress;
   $('pauseAcquisitionTask').textContent=task.paused?'繼續':'暫停';$('pauseAcquisitionTask').disabled=task.stopping;
   $('stopAcquisitionTask').disabled=task.stopping;
 }
 function beginTimedTask(title) {
   clearTimeout(acquisitionTaskHideTimer);
   if(acquisitionTask)finishTimedTask(acquisitionTask,'stopped','已由下一項工作取代。',0);
-  const task={title,message:'準備執行…',progress:null,started:performance.now(),pausedAt:0,pausedTotal:0,paused:false,stopping:false,stopped:false,jobId:null,timer:null};
-  task.timing=new TaskTiming();task.timing.update(null);acquisitionTask=task;task.timer=setInterval(()=>renderAcquisitionTask(task),1000);renderAcquisitionTask(task);return task;
+  const task={title,message:'準備執行…',progress:0,started:performance.now(),pausedAt:0,pausedTotal:0,paused:false,stopping:false,stopped:false,jobId:null,timer:null};
+  task.timing=new TaskTiming();task.timing.update(0);acquisitionTask=task;task.timer=setInterval(()=>renderAcquisitionTask(task),1000);renderAcquisitionTask(task);return task;
 }
-function updateTimedTask(task,message,progress=null) {if(acquisitionTask!==task||task.stopped)return;task.message=message;if(progress!==undefined)task.progress=progress;task.timing.update(null,task.paused?'paused':task.stopping?'stopping':'running');renderAcquisitionTask(task);}
+function updateTimedTask(task,message,progress=null) {if(acquisitionTask!==task||task.stopped)return;task.message=message;if(Number.isFinite(progress))task.progress=progress;task.timing.update(task.progress,task.paused?'paused':task.stopping?'stopping':'running');renderAcquisitionTask(task);}
 function finishTimedTask(task,state='complete',message='已完成',delay=1800) {
   if(acquisitionTask!==task)return;clearInterval(task.timer);task.stopped=true;task.paused=false;task.progress=state==='complete'?100:task.progress;task.message=message;
-  task.timing.update(null,state);renderAcquisitionTask(task);$('pauseAcquisitionTask').disabled=true;$('stopAcquisitionTask').disabled=true;
+  task.timing.update(task.progress,state);renderAcquisitionTask(task);$('pauseAcquisitionTask').disabled=true;$('stopAcquisitionTask').disabled=true;
   acquisitionTaskHideTimer=setTimeout(()=>{if(acquisitionTask!==task)return;$('acquisitionTask').classList.add('completing');setTimeout(()=>{if(acquisitionTask===task){$('acquisitionTask').hidden=true;$('acquisitionTask').classList.remove('completing');acquisitionTask=null}},230)},delay);
 }
 async function taskCheckpoint(task) {
@@ -796,10 +803,10 @@ $('pauseAcquisitionTask').onclick=()=>safe(async()=>{
   const task=acquisitionTask;if(!task||task.stopping||task.stopped)return;
   if(task.jobId)await api(`/api/jobs/${task.jobId}/${task.paused?'resume':'pause'}`,'POST',{});
   if(task.paused){task.pausedTotal+=performance.now()-task.pausedAt;task.pausedAt=0;task.paused=false;task.message='繼續執行…'}else{task.paused=true;task.pausedAt=performance.now();task.message='已暫停';}
-  task.timing.update(null,task.paused?'paused':'running');renderAcquisitionTask(task);
+  task.timing.update(task.progress,task.paused?'paused':'running');renderAcquisitionTask(task);
 });
 $('stopAcquisitionTask').onclick=()=>safe(async()=>{
-  const task=acquisitionTask;if(!task||task.stopping||task.stopped)return;task.stopping=true;task.paused=false;task.message='正在安全停止…';task.timing.update(null,'stopping');renderAcquisitionTask(task);
+  const task=acquisitionTask;if(!task||task.stopping||task.stopped)return;task.stopping=true;task.paused=false;task.message='正在安全停止…';task.timing.update(task.progress,'stopping');renderAcquisitionTask(task);
   if(task.jobId)await api(`/api/jobs/${task.jobId}/cancel`,'POST',{});else finishTimedTask(task,'stopped','已停止等待',2400);
 });
 async function pollJob(job,onDone,onProgress) {
@@ -813,7 +820,7 @@ async function pollJob(job,onDone,onProgress) {
       timing.update(current.progress,current.state,current.progress_phase);
       $('jobMessage').textContent=`${timing.text()} · ${taskStage(current.message||'正在處理工作…')}`;
       $('jobMessage').title=$('jobMessage').textContent;
-      $('jobProgress').hidden=true;
+      $('jobProgress').hidden=false;$('jobProgress').value=Number.isFinite(current.progress)?Math.max(0,Math.min(100,current.progress)):0;
       if(tracker){tracker.paused=current.state==='paused';tracker.stopping=current.state==='stopping';tracker.message=current.message||'正在處理工作…';tracker.progress=current.progress;tracker.timing=timing;renderAcquisitionTask(tracker)}
       if(current.state==='succeeded'){if(onDone)await onDone(current.result);return current.result;}
       if(current.state==='failed')throw Error(typeof current.error==='string'?current.error:current.error?.message||current.message||'工作未完成。');

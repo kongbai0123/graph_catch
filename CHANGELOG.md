@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.21.4 — 2026-09-30
+
+- Fixed CVAT activation after moving or copying the Workbench folder: stale ready state is no longer reused, and the UI now explains that CVAT must be prepared for the current location without deleting existing data.
+- Prevented Windows Smart App Control from blocking application startup when the optional OpenCV native extension is rejected; core geometry now starts without OpenCV and reports a focused error only for mask-to-polygon conversion.
+- 背景匯入、安裝、採集與訓練固定顯示確定型進度條；不再隱藏進度元件或以訊息更新清除既有進度。
+- 移除「目前無法估算完成時間」及模糊的約略 ETA，真實進度開始後改以 `HH:MM:SS` 顯示秒級剩餘時間；初始量測期間顯示「剩餘時間計算中」。
+
 ## 2.21.3 — 2026-09-30
 
 - 「設定 → 更新與版本」可直接執行安全的 GitHub fast-forward 更新；本機有未提交修改時會阻止更新並提示檔案。

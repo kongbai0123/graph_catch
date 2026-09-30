@@ -73,6 +73,21 @@ class JobControlTests(unittest.TestCase):
         finally:
             release.set()
 
+    def test_progress_is_determinate_from_queue_and_message_only_updates_preserve_it(self):
+        entered, release = threading.Event(), threading.Event()
+        def action(progress):
+            progress('phase started', 25)
+            progress('still working')
+            entered.set()
+            release.wait(2)
+        submitted = self.jobs.submit('import', action)
+        self.assertEqual(submitted['progress'], 0)
+        try:
+            self.assertTrue(entered.wait(1))
+            self.assertEqual(self.jobs.get(submitted['id'])['progress'], 25)
+        finally:
+            release.set()
+
 
 if __name__ == "__main__":
     unittest.main()

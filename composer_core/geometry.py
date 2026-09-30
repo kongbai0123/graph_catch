@@ -6,8 +6,30 @@ conversion always starts from that canonical mask and records the resulting loss
 from __future__ import annotations
 
 import math
-import cv2
 import numpy as np
+
+
+def _polygon_area(points) -> float:
+    """Return signed polygon area without loading an optional native runtime."""
+    array = np.asarray(points, dtype=np.float64)
+    x, y = array[:, 0], array[:, 1]
+    return float((np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2.0)
+
+
+def _opencv():
+    """Load OpenCV only for mask-to-polygon conversion.
+
+    Some managed Windows installations reject PyPI native extensions through
+    Smart App Control. Core project loading and editing must still be able to
+    start; the optional conversion reports an actionable error when invoked.
+    """
+    try:
+        import cv2
+        return cv2
+    except (ImportError, OSError) as exc:
+        raise RuntimeError(
+            "Windows 應用程式控制原則阻擋 OpenCV；Mask 轉多邊形功能目前無法使用。"
+        ) from exc
 
 
 def decode_rle(counts, width: int, height: int) -> np.ndarray:
@@ -84,7 +106,7 @@ def validate_shape(shape: dict, width: int, height: int) -> None:
                not all(number(v) for v in p) or not 0 <= p[0] <= width or
                not 0 <= p[1] <= height for p in points):
             raise ValueError('標註頂點超出圖片或不是有限數值')
-        if kind in {'polygon', 'obb'} and abs(cv2.contourArea(np.asarray(points, np.float32))) <= 0:
+        if kind in {'polygon', 'obb'} and abs(_polygon_area(points)) <= 0:
             raise ValueError('多邊形面積必須大於零')
         return
     values = [shape.get(k) for k in ('x', 'y', 'width', 'height')]
@@ -97,7 +119,12 @@ def validate_shape(shape: dict, width: int, height: int) -> None:
 
 def bounds(shape: dict, width: int, height: int) -> list[float]:
     if shape['type'] == 'mask':
-        return list(cv2.boundingRect(decode_rle(shape['counts'], width, height)))
+        rows, columns = np.nonzero(decode_rle(shape['counts'], width, height))
+        if not len(rows):
+            return [0, 0, 0, 0]
+        left, right = int(columns.min()), int(columns.max())
+        top, bottom = int(rows.min()), int(rows.max())
+        return [left, top, right - left + 1, bottom - top + 1]
     if shape['type'] == 'rectangle':
         return [shape[k] for k in ('x', 'y', 'width', 'height')]
     points = shape['points']
@@ -115,6 +142,7 @@ def shape_polygons(shape: dict, width: int, height: int, tolerance=0) -> tuple[l
         return [shape['points']], {}
     if kind != 'mask':
         raise ValueError(f'{kind} 無法表示為面積多邊形')
+    cv2 = _opencv()
     mask = decode_rle(shape['counts'], width, height)
     contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     outer, holes, original_points = [], 0, 0

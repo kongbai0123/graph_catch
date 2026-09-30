@@ -203,6 +203,9 @@ class CvatSetup:
             busy = busy or helper_busy
             installed = (self.compose_file.exists() and state.get("installed_version") == CVAT_VERSION
                          and state.get("project") == self.project)
+            workspace_moved = (state.get("installed_version") == CVAT_VERSION
+                               and bool(state.get("project"))
+                               and state.get("project") != self.project)
             phase = state.get("phase", "not_installed")
             description = state.get("text", "首次使用需準備 WSL 2、Docker 與 CVAT。")
             if phase in ACTIVE_PHASES and not busy:
@@ -216,6 +219,9 @@ class CvatSetup:
                 description = REBOOT_PENDING_TEXT
             if phase == "blocked" and probe.get("supported"):
                 phase, description = "resume_required", "系統已符合需求，可以繼續準備 CVAT。"
+            if workspace_moved and not busy and phase == "ready":
+                phase = "workspace_moved"
+                description = "偵測到工作台位置已變更，請為目前位置重新準備 CVAT；原有資料不會被刪除。"
             if not probe.get("supported", True):
                 phase, description = "blocked", probe.get("reason", "系統不符合需求。")
             prerequisites_present = all(probe.get(key, True) for key in ("docker_installed", "wsl_ready", "features_ready"))
@@ -228,6 +234,9 @@ class CvatSetup:
             current_step = state.get("step", "system")
             if phase == "reboot_required" and stale_state:
                 current_step = "system"
+            if phase == "workspace_moved":
+                current_step = ("wsl" if not probe.get("wsl_ready", True) or not probe.get("features_ready", True)
+                                else "docker" if not probe.get("docker_installed", True) else "download")
             if installed and not prerequisites_present:
                 current_step = "docker" if probe.get("wsl_ready") and probe.get("features_ready") else "wsl"
             ids = [row[0] for row in STEP_LABELS]
@@ -242,7 +251,7 @@ class CvatSetup:
                     "can_setup": not busy and phase not in ("blocked", "reboot_required"),
                     "reboot_required": phase == "reboot_required", "version": CVAT_VERSION,
                     "can_reboot": phase == "reboot_required" and os.name == "nt" and not busy,
-                    "resume": phase in ("resume_required", "interrupted", "error", "waiting_action"),
+                    "resume": phase in ("resume_required", "interrupted", "error", "waiting_action", "workspace_moved"),
                     "requirements": probe, "installed": installed,
                     "notice": "首次下載需要網路；Windows 可能要求管理員確認或重新啟動。Docker 首次啟動可能要求同意授權條款。"}
 

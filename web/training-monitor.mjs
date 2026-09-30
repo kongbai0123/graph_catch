@@ -256,7 +256,7 @@ export class TrainingMonitor {
     if(hasModel)heading.append(action('評估與模型',()=>this.onModel(run.model_version_id)));
     this.root.append(heading);
     this.renderDataQuality(run,this.root);
-    if(active.has(run.status)){const p=el('progress');p.className='run-progress';p.max=100;if(measured.value!==null)p.value=measured.value;p.setAttribute('aria-label',`${run.run_id} 訓練進度`);this.root.append(p)}
+    if(active.has(run.status)){const p=el('progress');p.className='run-progress';p.max=100;p.value=measured.value!==null?measured.value:0;p.setAttribute('aria-label',`${run.run_id} 訓練進度`);this.root.append(p)}
     if(active.has(run.status)){this.root.append(el('p',trainingTimeText(run),'readiness-item'));const detail=trainingTimeDetail(run);if(detail)this.root.append(el('p',detail,'muted'));}
     if(run.message)this.root.append(el('p',run.message,'muted'));
     if(run.error)this.root.append(el('p',run.error,'readiness-item error'));

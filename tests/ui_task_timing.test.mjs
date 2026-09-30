@@ -1,31 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TaskTiming,duration,taskStage} from '../web/task-timing.mjs';
+import {TaskTiming,countdown,duration,taskStage} from '../web/task-timing.mjs';
 
 function fixture(){let now=0;const timing=new TaskTiming(()=>now);return {timing,at(t,p,state='running',phase='default'){now=t;timing.update(p,state,phase);return timing.text()},time(t){now=t;return timing.text()}};}
 test('duration is readable for seconds, minutes and hours',()=>{
   assert.equal(duration(4.2),'5 秒');assert.equal(duration(61),'1 分 1 秒');assert.equal(duration(3660),'1 小時 1 分');
+  assert.equal(countdown(4.2),'00:00:05');assert.equal(countdown(3661),'01:01:01');
 });
-test('ETA needs real advances, not repeated polling or elapsed time',()=>{
+test('ETA initialization never displays an unavailable-estimate message',()=>{
   const f=fixture();f.at(0,0);for(let n=1;n<10;n++)f.at(n,0);
-  assert.match(f.time(10),/無法估算/);f.at(11,null);assert.match(f.time(12),/無法估算/);
+  assert.match(f.time(10),/進度 0%.*剩餘時間計算中/);f.at(11,null);assert.match(f.time(12),/剩餘時間計算中/);
+  assert.doesNotMatch(f.time(12),/無法估算/);
 });
 test('measured throughput estimates remaining stage work',()=>{
-  const f=fixture();f.at(0,0);f.at(2,10);f.at(4,20);
-  assert.match(f.at(6,30),/預估剩餘約 14 秒/);
-  assert.match(f.time(40),/進度暫未更新/);
+  const f=fixture();f.at(0,0);assert.match(f.at(2,10),/00:00:18/);f.at(4,20);
+  assert.match(f.at(6,30),/進度 30%.*00:00:14/);
+  assert.match(f.time(40),/進度 30%.*00:01:34/);
 });
 test('pause excludes paused time and resume resamples',()=>{
   const f=fixture();f.at(0,0);f.at(2,10);f.at(4,20);f.at(6,30);
   assert.match(f.at(8,30,'paused'),/已暫停/);
-  assert.match(f.at(108,30,'running'),/無法估算/);
+  assert.match(f.at(108,30,'running'),/剩餘時間計算中/);
   assert.equal(f.timing.elapsed,8);
 });
 test('regression, unknown progress and phase switches invalidate ETA',()=>{
   for(const change of ['regress','unknown','phase']){
     const f=fixture();f.at(0,0);f.at(2,10);f.at(4,20);f.at(6,30);
     const text=f.at(8,change==='regress'?1:change==='unknown'?null:40,'running',change==='phase'?'saving':'default');
-    assert.doesNotMatch(text,/預估剩餘約/);
+    assert.doesNotMatch(text,/目前階段剩餘 \d/);
+    assert.doesNotMatch(text,/無法估算/);
   }
 });
 test('terminal states freeze elapsed time and never imply early success',()=>{
@@ -35,10 +38,10 @@ test('terminal states freeze elapsed time and never imply early success',()=>{
   }
 });
 test('queued time is not counted and stalled recovery needs fresh samples',()=>{
-  const f=fixture();assert.match(f.at(0,null,'queued'),/排隊等待/);
+  const f=fixture();assert.match(f.at(0,null,'queued'),/進度 0%.*剩餘時間計算中/);
   f.at(100,0);f.at(102,10);f.at(104,20);f.at(106,30);
   assert.doesNotMatch(f.time(107),/已耗時/);
-  assert.match(f.at(150,40),/無法估算/);
+  assert.match(f.at(150,40),/剩餘時間計算中/);
 });
 test('task messages omit item counters and elapsed-time substitutes',()=>{
   assert.equal(taskStage('保存原圖 12 / 66'),'保存原圖');

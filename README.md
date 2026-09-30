@@ -3,7 +3,7 @@
 Windows 桌面視覺資料工作台，整合影像採集、標註、審核、資料分割與模型訓練。專案資料與模型保存在本機，固定資料版本讓每次實驗的圖片、標註及增強設定可追溯。
 
 [![CI](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml)
-[![Version: 2.21.3](https://img.shields.io/badge/Version-2.21.3-45c6b1.svg)](CHANGELOG.md)
+[![Version: 2.21.4](https://img.shields.io/badge/Version-2.21.4-45c6b1.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D4.svg)](#快速開始)
 
@@ -24,7 +24,7 @@ Windows 桌面視覺資料工作台，整合影像採集、標註、審核、資
 - **標註編輯**：同視窗切換內建編輯器、Labelme 與本機 CVAT，支援 SAM2／GrabCut 輔助分割；切換或儲存影像時保留清單位置與目前選取項目。
 - **資料管理**：人工審核可依有無標註分類，支援排除訓練、可還原垃圾桶與永久刪除；資料分割以「選擇方式 → 調整比例 → 檢查並套用」引導操作，Train-only 增強會逐集合列出原圖、新增事件及實際訓練量，並可直接固定為可追溯資料版本。
 - **訓練設定**：增強與各模型參數按專案保存，重開分割管理器保留已套用設定；「驗證設定（不訓練）」核對固定版本、圖片雜湊、輸入量、批次及引擎支援差異。
-- **快速估時**：設定頁可用相同設定的歷史紀錄初估耗時；執行時以 tqdm 實測工作量持續校正，分開計算訓練、驗證與保存，揭露波動範圍及停滯狀態。
+- **進度與剩餘時間**：背景匯入、安裝、採集與訓練一律顯示確定型進度條；取得真實工作量後以 `HH:MM:SS` 顯示秒級剩餘時間並持續校正，初始化期間明確標示「剩餘時間計算中」。
 - **模型訓練**：支援物件偵測、實例分割、語意分割與圖片分類，提供訓練曲線及模型比較；固定資料版本保存分割與增強配方，編輯草稿不會改寫歷史版本。
 - **外部模型匯入**：可從檔案總管拖曳或用檔案瀏覽器選擇 Ultralytics 相容的 YOLO／RT-DETR `.pt` 權重；驗證後用於圖片／影片試跑與預標註，並保留來源與類別資訊。
 - **模型中心**：以總覽、訓練設定、評估報告、辨識對照與外部試跑分頁呈現；評估可下載 JSON，Batch 對照可篩選 TP／FP／FN 並下載 PNG、JSON、CSV。

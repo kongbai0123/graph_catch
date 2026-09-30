@@ -36,7 +36,7 @@ class JobManager:
             if len(self.active()) >= 8:
                 raise ValueError("背景工作已滿，請等待目前工作完成")
             jid = uuid.uuid4().hex
-            job = dict(id=jid, kind=kind, state="queued", message="等待處理", progress=None, created_at=time.time(), pauseable=True, stoppable=True)
+            job = dict(id=jid, kind=kind, state="queued", message="等待處理", progress=0, created_at=time.time(), pauseable=True, stoppable=True)
             self.jobs[jid] = job
             self.controls[jid] = dict(paused=threading.Event(), cancelled=threading.Event())
             pool = (self.install_pool if kind == 'model-install' else self.interactive_pool if kind == 'ai'
@@ -60,7 +60,9 @@ class JobManager:
         def progress(message, percent=None, *, phase=None):
             checkpoint()
             with self.lock:
-                self.jobs[jid].update(message=str(message), progress=percent)
+                self.jobs[jid].update(message=str(message))
+                if percent is not None:
+                    self.jobs[jid]['progress'] = max(0, min(100, float(percent)))
                 if phase is not None:
                     self.jobs[jid]['progress_phase'] = str(phase)
         with self.lock:
@@ -72,11 +74,11 @@ class JobManager:
                 self.jobs[jid].update(state="succeeded", message="已完成", progress=100, result=result)
         except JobCancelled as exc:
             with self.lock:
-                self.jobs[jid].update(state="cancelled", message=str(exc), progress=None)
+                self.jobs[jid].update(state="cancelled", message=str(exc))
         except Exception as exc:
             logging.exception("Background job %s failed", jid)
             with self.lock:
-                self.jobs[jid].update(state="failed", message=str(exc), error=str(exc), progress=None)
+                self.jobs[jid].update(state="failed", message=str(exc), error=str(exc))
         finally:
             with self.lock:
                 self.jobs[jid]['finished_at'] = time.time()

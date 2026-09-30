@@ -131,16 +131,16 @@ async function pollTrainingStatus(projectId){
 }
 function updateBackgroundTraining(error=''){
   const run=activeTrainingRun(),button=$('backgroundTraining');
-  $('backgroundTrainingProgress').hidden=true;
+  $('backgroundTrainingProgress').hidden=false;$('backgroundTrainingProgress').value=0;
   button.hidden=!run&&!error;
-  if(error){$('backgroundTrainingText').textContent=`訓練狀態暫時無法更新：${error}`;$('backgroundTrainingProgress').removeAttribute('value');return}
+  if(error){$('backgroundTrainingText').textContent=`訓練狀態暫時無法更新：${error}`;return}
   if(!run)return;
   const epoch=run.epoch?` · Epoch ${number(run.epoch)}/${number(run.config?.epochs)}`:'';
   const batch=run.batch&&run.batches_per_epoch?` · Batch ${number(run.batch)}/${number(run.batches_per_epoch)}`:'';
   const updates=Number(run.execution?.optimizer_steps);const step=Number.isFinite(updates)?` · 權重更新 ${number(updates)}`:'';
   $('backgroundTrainingText').textContent=`${run.run_id} · ${trainingTimeText(run)}`;
   button.title=`${trainingStatusName(run.status)}${epoch}${batch}${step} · ${trainingTimeDetail(run)}`;
-  const progress=trainingProgress(run).value;if(progress!==null)$('backgroundTrainingProgress').value=progress;else $('backgroundTrainingProgress').removeAttribute('value');
+  const progress=trainingProgress(run).value;$('backgroundTrainingProgress').value=progress!==null?progress:0;
 }
 function renderReadiness(report){
   const root=$('trainingReadiness');root.replaceChildren();
