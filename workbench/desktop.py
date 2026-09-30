@@ -18,7 +18,8 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from .server import APP_ROOT, WorkbenchService
 from . import __version__
-from .desktop_update import changed_sources, github_version_status, schedule_restart, source_snapshot, validate_sources, missing_runtime_requirements
+from .desktop_update import (changed_sources, github_version_status, pull_remote_update,
+                             schedule_restart, source_snapshot, validate_sources, missing_runtime_requirements)
 
 
 class DialogBridge(QObject):
@@ -154,6 +155,10 @@ class WorkbenchBridge(QObject):
         self.window.start_remote_version_check(force=True)
         return json.dumps(self.window.remote_version_status, ensure_ascii=False)
 
+    @Slot(result=str)
+    def applyRemoteUpdate(self):
+        return json.dumps(self.window.apply_remote_update(), ensure_ascii=False)
+
 
 class MainWindow(QMainWindow):
     def __init__(self, service, bridge):
@@ -168,6 +173,7 @@ class MainWindow(QMainWindow):
         self.remote_version_checked_at = 0.0
         self.remote_version_thread = None
         self.remote_version_result = None
+        self.remote_update_result = None
         self.camera_shutdown = None
         self.setWindowTitle("Vision Workbench｜影像資料工作台")
         self.resize(1520, 960)
@@ -223,6 +229,7 @@ class MainWindow(QMainWindow):
         self.update_timer.setInterval(2500)
         self.update_timer.timeout.connect(self.check_update_indicator)
         self.update_timer.timeout.connect(self.poll_remote_version_check)
+        self.update_timer.timeout.connect(self.poll_remote_update)
 
     def start_remote_version_check(self, force=False):
         if self.remote_version_thread and self.remote_version_thread.is_alive():
@@ -248,6 +255,24 @@ class MainWindow(QMainWindow):
             self.page.runJavaScript(f"window.workbenchRemoteVersionStatus?.({json.dumps(self.remote_version_status, ensure_ascii=False)})")
         elif time.monotonic() - self.remote_version_checked_at >= 600:
             self.start_remote_version_check()
+
+    def apply_remote_update(self):
+        if self.remote_update_result is not None:
+            return self.remote_update_result
+        if self.remote_version_thread and self.remote_version_thread.is_alive():
+            return {"state": "checking", "message": "正在完成版本檢查，請稍候。"}
+        self.remote_update_result = {"state": "updating", "message": "正在從 GitHub 更新程式…"}
+        def update():
+            self.remote_update_result = pull_remote_update(APP_ROOT)
+        threading.Thread(target=update, daemon=True).start()
+        return self.remote_update_result
+
+    def poll_remote_update(self):
+        result = self.remote_update_result
+        if not result or result.get("state") in {"updating", "checking"}:
+            return
+        self.remote_update_result = None
+        self.page.runJavaScript(f"window.workbenchRemoteUpdateStatus?.({json.dumps(result, ensure_ascii=False)})")
 
     def toggle_fullscreen(self):
         """Switch the native workbench between full-screen and windowed mode."""

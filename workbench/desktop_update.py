@@ -49,6 +49,29 @@ def github_version_status(root, current_version, timeout=8):
             "message": f"目前安裝 v{current_version}；GitHub 最新標籤為 v{latest}。"}
 
 
+def pull_remote_update(root, timeout=120):
+    """Fast-forward the checkout only when the working tree is clean."""
+    root = Path(root).resolve()
+    if not (root / ".git").exists():
+        return {"state": "unavailable", "message": "此安裝沒有 Git 資料，無法由工作台更新。"}
+    try:
+        status = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                                capture_output=True, text=True, check=True, timeout=10,
+                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        if status.stdout.strip():
+            files = "、".join(line[3:] for line in status.stdout.splitlines()[:5])
+            return {"state": "blocked", "message": f"更新前必須先處理本機未提交修改：{files}"}
+        result = subprocess.run(["git", "-C", str(root), "pull", "--ff-only"],
+                                capture_output=True, text=True, check=True, timeout=timeout,
+                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "Git 更新失敗").strip().splitlines()[-1]
+        return {"state": "error", "message": f"Git 更新失敗：{detail}"}
+    except (OSError, subprocess.TimeoutExpired):
+        return {"state": "unavailable", "message": "GitHub 更新逾時或無法連線，請檢查網路。"}
+    return {"state": "updated", "message": result.stdout.strip() or "已完成 GitHub 更新，請重新啟動工作台。"}
+
+
 def source_snapshot(root):
     root = Path(root).resolve()
     paths = [root/name for name in SOURCE_FILES]

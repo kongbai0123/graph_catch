@@ -51,6 +51,26 @@ async function refreshRemoteVersion(force=false){
   if(!state.nativeBridge?.remoteVersionStatus){renderRemoteVersion({state:'unavailable',message:'GitHub 版本檢查只在 Git 桌面安裝版提供。'});return state.remoteVersion}
   const snapshot=await invokeNativeUpdate(force&&state.nativeBridge.checkRemoteVersion?'checkRemoteVersion':'remoteVersionStatus');renderRemoteVersion(snapshot);return snapshot;
 }
+function renderRemoteUpdate(snapshot){
+  if(!snapshot)return;
+  const button=$('githubUpdateButton');
+  if(snapshot.state==='updated'){
+    $('githubVersionBadge').textContent='已更新';
+    $('githubVersionBadge').className='settings-state ready';
+    $('githubVersionStatus').textContent=snapshot.message;
+    button.disabled=true;button.textContent='更新完成，請重新啟動';
+  }else if(snapshot.state==='updating'){
+    button.disabled=true;button.textContent='更新中…';
+  }else{
+    button.disabled=false;button.textContent='從 GitHub 更新';
+    $('githubVersionStatus').textContent=snapshot.message||'GitHub 更新未完成。';
+    if(snapshot.state==='blocked'||snapshot.state==='error')toast(snapshot.message||'GitHub 更新未完成。',true);
+  }
+}
+async function runRemoteUpdate(){
+  if(!state.nativeBridge?.applyRemoteUpdate)throw Error('GitHub 更新只在 Windows 桌面版提供。');
+  renderRemoteUpdate(await invokeNativeUpdate('applyRemoteUpdate'));
+}
 function renderDesktopUpdate(snapshot){
   if(!snapshot)return;
   state.desktopUpdate={...(state.desktopUpdate||{}),...snapshot};const update=state.desktopUpdate;
@@ -82,6 +102,7 @@ async function runDesktopUpdate(){
   renderDesktopUpdate(await invokeNativeUpdate('applyUpdate'));
 }
 nativeCallbacks.updateProgress=snapshot=>{renderDesktopUpdate(snapshot);if(snapshot?.state==='error')toast(snapshot.message||'更新未完成。',true)};
+nativeCallbacks.remoteUpdateStatus=renderRemoteUpdate;
 async function loadModelCatalog(refresh=false){
   state.modelCatalog=await api(`/api/model-catalog${refresh?'?refresh=1':''}`);renderModelCatalog();renderSettingsSummary();return state.modelCatalog;
 }
@@ -117,5 +138,5 @@ async function installModelComponent(componentId){
   state.settingsJob=null;$('settingsJobProgress').hidden=true;if(current.state!=='succeeded')throw Error(current.error||current.message||'安裝未完成');
   await loadModelCatalog(true);if(state.project)await loadTraining({quiet:true});$('settingsJobText').textContent=`${component.name} 已安裝並通過檢查`;toast(`${component.name} 已可使用。`);
 }
-return {settingValue, saveSetting, applySettings, showSettingsPage, openSettings, closeSettings, renderSettingsSummary, parseNativeResult, invokeNativeUpdate, renderRemoteVersion, refreshRemoteVersion, renderDesktopUpdate, refreshDesktopUpdate, runDesktopUpdate, loadModelCatalog, catalogState, renderModelCatalog, renderCatalogDetail, installModelComponent};
+return {settingValue, saveSetting, applySettings, showSettingsPage, openSettings, closeSettings, renderSettingsSummary, parseNativeResult, invokeNativeUpdate, renderRemoteVersion, refreshRemoteVersion, runRemoteUpdate, renderDesktopUpdate, refreshDesktopUpdate, runDesktopUpdate, loadModelCatalog, catalogState, renderModelCatalog, renderCatalogDetail, installModelComponent};
 }

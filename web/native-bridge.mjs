@@ -3,6 +3,7 @@ export const nativeCallbacks = Object.create(null);
 const names = {
   workbenchUpdateStatus: 'updateStatus', workbenchUpdateProgress: 'updateProgress',
   workbenchRemoteVersionStatus: 'remoteVersionStatus',
+  workbenchRemoteUpdateStatus: 'remoteUpdateStatus',
   workbenchFlush: 'flush', workbenchState: 'state', workbenchNativeDrag: 'drag',
   workbenchExternalSync: 'externalSync', workbenchExternalNavigate: 'navigate',
 };
