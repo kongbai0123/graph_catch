@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -17,6 +18,26 @@ SOURCE_FILES = ("main.py", "cvat_setup.py", "setup_cvat.ps1", "bootstrap.ps1", "
 VERSION_TAG = re.compile(r"refs/tags/v(\d+)\.(\d+)\.(\d+)(?:\^\{\})?$")
 
 
+def _git_executable():
+    """Find Git in standard Windows locations when the desktop PATH is stale."""
+    executable = shutil.which("git")
+    if executable:
+        return executable
+    if os.name != "nt":
+        return None
+    roots = [os.environ.get("ProgramW6432"), os.environ.get("ProgramFiles"),
+             os.environ.get("ProgramFiles(x86)")]
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        roots.append(str(Path(local_app_data) / "Programs"))
+    for root in dict.fromkeys(value for value in roots if value):
+        for relative in (Path("Git") / "cmd" / "git.exe", Path("Git") / "bin" / "git.exe"):
+            candidate = Path(root) / relative
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def github_version_status(root, current_version, timeout=8):
     """Read published version tags from origin without changing the checkout."""
     root = Path(root).resolve()
@@ -25,14 +46,23 @@ def github_version_status(root, current_version, timeout=8):
         return {"state": "unavailable", "message": "無法辨識目前程式版本。"}
     if not (root / ".git").exists():
         return {"state": "unavailable", "message": "此安裝沒有 Git 資料，無法追蹤 GitHub 版本。"}
+    git = _git_executable()
+    if not git:
+        return {"state": "unavailable", "message": "找不到 Git for Windows（git.exe）；請安裝 Git 後重新啟動工作台。"}
     try:
         result = subprocess.run(
-            ["git", "-C", str(root), "ls-remote", "--tags", "origin", "refs/tags/v*"],
+            [git, "-C", str(root), "ls-remote", "--tags", "origin", "refs/tags/v*"],
             capture_output=True, text=True, check=True, timeout=timeout,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return {"state": "unavailable", "message": "無法連線 GitHub 或讀取 origin 的版本標籤，請檢查網路與 Git 設定。"}
+    except subprocess.TimeoutExpired:
+        return {"state": "unavailable", "message": f"GitHub 版本檢查逾時（{timeout} 秒），請重試或檢查網路。"}
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "Git 未能讀取 origin 的版本標籤").strip().splitlines()[-1]
+        return {"state": "unavailable", "message": f"GitHub 版本檢查失敗：{detail}"}
+    except OSError as error:
+        detail = error.strerror or str(error)
+        return {"state": "unavailable", "message": f"無法啟動 Git（{detail}）。請確認 Git 安裝狀態。"}
     versions = []
     for line in result.stdout.splitlines():
         match = VERSION_TAG.search(line)
@@ -54,21 +84,27 @@ def pull_remote_update(root, timeout=120):
     root = Path(root).resolve()
     if not (root / ".git").exists():
         return {"state": "unavailable", "message": "此安裝沒有 Git 資料，無法由工作台更新。"}
+    git = _git_executable()
+    if not git:
+        return {"state": "unavailable", "message": "找不到 Git for Windows（git.exe）；請安裝 Git 後重新啟動工作台。"}
     try:
-        status = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+        status = subprocess.run([git, "-C", str(root), "status", "--porcelain"],
                                 capture_output=True, text=True, check=True, timeout=10,
                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if status.stdout.strip():
             files = "、".join(line[3:] for line in status.stdout.splitlines()[:5])
             return {"state": "blocked", "message": f"更新前必須先處理本機未提交修改：{files}"}
-        result = subprocess.run(["git", "-C", str(root), "pull", "--ff-only"],
+        result = subprocess.run([git, "-C", str(root), "pull", "--ff-only"],
                                 capture_output=True, text=True, check=True, timeout=timeout,
                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or error.stdout or "Git 更新失敗").strip().splitlines()[-1]
         return {"state": "error", "message": f"Git 更新失敗：{detail}"}
-    except (OSError, subprocess.TimeoutExpired):
-        return {"state": "unavailable", "message": "GitHub 更新逾時或無法連線，請檢查網路。"}
+    except subprocess.TimeoutExpired:
+        return {"state": "unavailable", "message": f"GitHub 更新逾時（{timeout} 秒），請重試或檢查網路。"}
+    except OSError as error:
+        detail = error.strerror or str(error)
+        return {"state": "unavailable", "message": f"無法啟動 Git（{detail}）。請確認 Git 安裝狀態。"}
     return {"state": "updated", "message": result.stdout.strip() or "已完成 GitHub 更新，請重新啟動工作台。"}
 
 

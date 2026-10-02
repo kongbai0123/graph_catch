@@ -8,10 +8,23 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from workbench.desktop_update import changed_sources, github_version_status, source_snapshot, validate_sources, missing_runtime_requirements
+from workbench.desktop_update import (_git_executable, changed_sources, github_version_status,
+                                      source_snapshot, validate_sources, missing_runtime_requirements)
 
 
 class DesktopUpdateTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows Git discovery")
+    def test_git_executable_finds_standard_install_when_path_is_stale(self):
+        with tempfile.TemporaryDirectory() as folder:
+            executable = Path(folder) / "Git" / "cmd" / "git.exe"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"fixture")
+            with patch("workbench.desktop_update.shutil.which", return_value=None), patch.dict(
+                os.environ,
+                {"ProgramW6432": folder, "ProgramFiles": "", "ProgramFiles(x86)": "", "LOCALAPPDATA": ""},
+            ):
+                self.assertEqual(_git_executable(), str(executable))
+
     def test_github_version_check_distinguishes_remote_tags_from_local_files(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

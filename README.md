@@ -3,7 +3,7 @@
 Windows 桌面視覺資料工作台，整合影像採集、標註、審核、資料分割與模型訓練。專案資料與模型保存在本機，固定資料版本讓每次實驗的圖片、標註及增強設定可追溯。
 
 [![CI](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml)
-[![Version: 2.21.4](https://img.shields.io/badge/Version-2.21.4-45c6b1.svg)](CHANGELOG.md)
+[![Version: 2.21.5](https://img.shields.io/badge/Version-2.21.5-45c6b1.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D4.svg)](#快速開始)
 
@@ -78,7 +78,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bootstrap.ps1
 
 ### 更新既有安裝
 
-工作台「設定 → 更新與版本」會追蹤 GitHub 的版本標籤並提示新版；下載新版仍須在關閉工作台後於專案資料夾執行以下指令。「本機程式檔案」區塊只負責套用磁碟上已有的原始碼變更。
+工作台「設定 → 更新與版本」會直接查詢 GitHub 版本標籤；有新版時可按「從 GitHub 更新」執行 fast-forward 更新。本機有未提交修改時會先阻止更新並列出檔案。「本機程式檔案」區塊只負責套用磁碟上已有的原始碼變更。
 
 關閉工作台，更新原始碼並同步主程式依賴：
 
