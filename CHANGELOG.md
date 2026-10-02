@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.21.5 — 2026-10-02
+
+- 修正 Windows 桌面程式在 PATH 尚未更新時找不到 Git 的問題；版本檢查與 GitHub 更新會改從 Git 標準安裝位置尋找 `git.exe`。
+- Git 未安裝、連線失敗及逾時現在會顯示各自的原因，方便排除更新問題。
+
 ## 2.21.4 — 2026-09-30
 
 - Fixed CVAT activation after moving or copying the Workbench folder: stale ready state is no longer reused, and the UI now explains that CVAT must be prepared for the current location without deleting existing data.
