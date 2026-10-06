@@ -43,10 +43,15 @@ class DesktopUpdateRestartTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.folder = Path(self.temporary.name)
+        # Windows runners may expose TEMP through an 8.3 alias. Production
+        # canonicalizes these paths, so compare against existing resolved paths.
+        self.folder = Path(self.temporary.name).resolve()
         self.root = self.folder / "應用 程式"
         self.root.mkdir()
+        self.root = self.root.resolve()
         self.data = self.folder / "自訂 資料"
+        self.data.mkdir()
+        self.data = self.data.resolve()
 
     def requirements(self):
         (self.root / "requirements.txt").write_text("fixture-package==2.0\n", encoding="utf-8")
