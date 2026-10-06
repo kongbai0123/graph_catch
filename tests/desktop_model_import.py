@@ -48,6 +48,24 @@ def main():
             js(f'document.querySelector({json.dumps(selector)}).click()')
         def settle():
             loop=QEventLoop();QTimer.singleShot(500,loop.quit);loop.exec()
+        def assert_model_layout():
+            # The current workspace aligns independent panels at the top.
+            geometry=json.loads(js("""(()=>{
+                const browser=document.querySelector('.model-browser'),detail=document.querySelector('#modelDetail'),workspace=document.querySelector('.model-workspace');
+                return JSON.stringify({browser:browser.getBoundingClientRect().toJSON(),detail:detail.getBoundingClientRect().toJSON(),workspace:workspace.getBoundingClientRect().toJSON(),
+                    visible:[browser,detail,workspace].every(node=>node.getClientRects().length>0&&getComputedStyle(node).visibility!=='hidden'),
+                    viewport:innerWidth,documentWidth:document.documentElement.scrollWidth});
+            })()"""))
+            browser,detail,workspace=(geometry[key] for key in ('browser','detail','workspace'))
+            assert geometry['visible'],geometry
+            assert all(box['width']>0 and box['height']>0 for box in (browser,detail,workspace)),geometry
+            assert abs(browser['top']-detail['top'])<2,geometry
+            assert browser['left']<detail['left'] and browser['right']<=detail['left']+1,geometry
+            assert all(box['left']>=workspace['left']-1 and box['right']<=workspace['right']+1
+                       and box['top']>=workspace['top']-1 and box['bottom']<=workspace['bottom']+1
+                       for box in (browser,detail)),geometry
+            assert workspace['left']>=-1 and workspace['right']<=geometry['viewport']+1,geometry
+            assert geometry['documentWidth']<=geometry['viewport']+2,geometry
         try:
             wait("document.querySelector('.project-card')!==null")
             click('.project-card');wait("typeof window.workbenchState==='function' && !window.workbenchState().busy")
@@ -56,7 +74,7 @@ def main():
             wait("document.querySelector('#modelDetail').textContent.includes('尚無可用模型')")
             for width in (1460,1088):
                 view.resize(width,1000);QTest.qWait(200)
-                assert js("Math.abs(document.querySelector('.model-browser').getBoundingClientRect().bottom-document.querySelector('#modelDetail').getBoundingClientRect().bottom)<2")
+                assert_model_layout()
             settle();view.grab().save(str(output/'aligned-empty.png'))
             click('#importModel');wait("document.querySelector('#modelImportFile')?.type==='file'")
             assert js("document.querySelector('#modelImportPath')===null && document.querySelector('#modelImportFile').accept==='.pt'")
@@ -80,7 +98,7 @@ def main():
             assert js("document.querySelector('#trialModel').value===document.querySelector('#comparisonModel').value")
             assert js("document.querySelector('#trialModel').selectedOptions[0].textContent.includes('零件模型')")
             assert js("document.querySelector('#trialSource').textContent===''")
-            assert js("Math.abs(document.querySelector('.model-browser').getBoundingClientRect().bottom-document.querySelector('#modelDetail').getBoundingClientRect().bottom)<2")
+            assert_model_layout()
             wait("!window.workbenchState().busy && !window.workbenchState().transitioning")
             js("document.querySelector('#toast').textContent=''")
             settle();view.grab().save(str(output/'imported.png'))
