@@ -123,8 +123,9 @@ def _backup_paths(entries, incoming):
             continue
         for name in names:
             path = Path(name)
-            is_source = path.parts[0] in folders or len(path.parts) == 1 and path.suffix.lower() in (
-                SOURCE_SUFFIXES | {".md", ".txt", ".toml", ".yaml", ".yml"})
+            is_source = path.parts[0] in folders or name in {
+                *SOURCE_FILES, "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE",
+                "pyproject.toml", ".gitignore", ".gitattributes"}
             collides = any(item == name or item.startswith(name + "/") or name.startswith(item + "/")
                            for item in incoming)
             if is_source or collides:
@@ -223,7 +224,8 @@ def pull_remote_update(root, timeout=120, progress=None):
             if ancestry.returncode:
                 return {"state": "blocked", "message": "本機有不同的 Git 提交，已保留版本；自動更新不會覆蓋這些提交。"}
             changed = _git(root, "diff", "--name-only", "-z", old_head, target).stdout.split("\0")
-            if any(name.startswith(PROTECTED_DIRECTORIES) for name in changed if name):
+            if any(name.startswith(PROTECTED_DIRECTORIES) or Path(name).suffix.lower() in {
+                    ".pt", ".pth", ".onnx", ".ckpt", ".safetensors"} for name in changed if name):
                 return {"state": "blocked", "message": "遠端更新涉及專案資料或執行環境；已保留本機內容，沒有套用。"}
             incoming = _git(root, "ls-tree", "-r", "--name-only", "-z", target).stdout.split("\0")
             current_entries = _dirty_entries(root)
