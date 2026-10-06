@@ -442,9 +442,18 @@ def main():
             run.update(epoch=13, metrics=new_row, progress=65, updated_at=time.time())
             run['timing'].update(completed=26, remaining_seconds=100, updated_at=time.time())
             atomic_json(path, run)
-            wait(chart_script("val/mean_iou", ".querySelectorAll('circle[data-run-id=R005]').length===13"))
-            wait("document.querySelector('#trainingRunDetail').textContent.includes('全程剩餘')")
-            assert js("document.querySelector('#trainingRunDetail').textContent.includes('波動範圍')")
+            # Pin only this assertion to the report clock so polling delay cannot
+            # shift the seconds-level ETA before checking its exact HH:MM:SS.
+            js(f"window.__desktopTrainingClock=Date.now;Date.now=()=>{run['timing']['updated_at']}*1000")
+            try:
+                wait(chart_script("val/mean_iou", ".querySelectorAll('circle[data-run-id=R005]').length===13"))
+                eta_seconds = run['timing']['remaining_seconds']
+                expected_eta = f"動態預估 · 全程剩餘 {eta_seconds // 3600:02d}:{eta_seconds // 60 % 60:02d}:{eta_seconds % 60:02d}"
+                eta_text = js("[...document.querySelectorAll('#trainingRunDetail > p.readiness-item')].find(p=>p.textContent.includes('全程剩餘'))?.textContent")
+                assert eta_text == expected_eta, (expected_eta, eta_text)
+                assert js("document.querySelector('#trainingRunDetail').textContent.includes('剩餘時間依已完成工作量逐秒更新。')")
+            finally:
+                js("Date.now=window.__desktopTrainingClock;delete window.__desktopTrainingClock")
             capture('35-training-time-estimate', target='#trainingRunDetail')
             assert "0.9012" in hover_epoch("val/mean_iou", 13)
             assert domains() == live_domains, (live_domains, domains())
