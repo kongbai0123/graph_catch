@@ -38,6 +38,9 @@ jobs:
       - name: Run JavaScript tests
         run: node --test tests/*.test.mjs
 
+      - name: Verify single-click Git update, backup and restart workflow
+        run: python tests/desktop_update_workflow.py
+
       - name: Verify training desktop workflow
         run: python tests/desktop_training.py
 

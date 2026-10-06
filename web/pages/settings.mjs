@@ -39,6 +39,7 @@ function invokeNativeUpdate(method){return new Promise(resolve=>state.nativeBrid
 function renderRemoteVersion(snapshot){
   if(!snapshot)return;
   state.remoteVersion=snapshot;
+  if(['waiting','saving','updating','restarting','updated'].includes(state.remoteUpdate?.state))return;
   const names={checking:'檢查中',available:'發現新版',current:'版本已同步',unavailable:'無法檢查'};
   const badge=$('githubVersionBadge');badge.textContent=names[snapshot.state]||'尚未檢查';
   badge.className='settings-state '+(snapshot.state==='available'?'warning':snapshot.state==='unavailable'?'error':'ready');
@@ -53,23 +54,27 @@ async function refreshRemoteVersion(force=false){
 }
 function renderRemoteUpdate(snapshot){
   if(!snapshot)return;
+  state.remoteUpdate=snapshot;
   const button=$('githubUpdateButton');
-  if(snapshot.state==='updated'){
-    $('githubVersionBadge').textContent='已更新';
-    $('githubVersionBadge').className='settings-state ready';
-    $('githubVersionStatus').textContent=snapshot.message;
-    button.disabled=true;button.textContent='更新完成，請重新啟動';
-  }else if(snapshot.state==='updating'){
-    button.disabled=true;button.textContent='更新中…';
+  const active=['waiting','saving','updating','restarting','updated'].includes(snapshot.state);
+  $('githubVersionStatus').textContent=snapshot.message||'GitHub 更新未完成。';
+  const names={waiting:'等待工作完成',saving:'正在儲存',updating:'正在更新',restarting:'正在重新啟動',updated:'正在重新啟動',current:'版本已同步',blocked:'等待處理',unavailable:'無法更新',error:'更新失敗'};
+  $('githubVersionBadge').textContent=names[snapshot.state]||'更新狀態';
+  $('githubVersionBadge').className='settings-state '+(['blocked','waiting'].includes(snapshot.state)?'warning':['error','unavailable'].includes(snapshot.state)?'error':'ready');
+  if(active){
+    button.disabled=true;
+    button.textContent=['restarting','updated'].includes(snapshot.state)?'正在重新啟動…':snapshot.state==='waiting'?'等待工作完成…':snapshot.state==='saving'?'正在儲存…':'更新中…';
   }else{
     button.disabled=false;button.textContent='從 GitHub 更新';
-    $('githubVersionStatus').textContent=snapshot.message||'GitHub 更新未完成。';
     if(snapshot.state==='blocked'||snapshot.state==='error')toast(snapshot.message||'GitHub 更新未完成。',true);
   }
 }
 async function runRemoteUpdate(){
   if(!state.nativeBridge?.applyRemoteUpdate)throw Error('GitHub 更新只在 Windows 桌面版提供。');
-  renderRemoteUpdate(await invokeNativeUpdate('applyRemoteUpdate'));
+  if(['waiting','saving','updating','restarting','updated'].includes(state.remoteUpdate?.state))return;
+  renderRemoteUpdate({state:'waiting',message:'正在確認目前工作，儲存後自動更新並重新啟動…'});
+  try{renderRemoteUpdate(await invokeNativeUpdate('applyRemoteUpdate'))}
+  catch(error){renderRemoteUpdate({state:'error',message:error.message||'GitHub 更新未完成。'})}
 }
 function renderDesktopUpdate(snapshot){
   if(!snapshot)return;

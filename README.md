@@ -3,7 +3,7 @@
 Windows 桌面視覺資料工作台，整合影像採集、標註、審核、資料分割與模型訓練。專案資料與模型保存在本機，固定資料版本讓每次實驗的圖片、標註及增強設定可追溯。
 
 [![CI](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/kongbai0123/vision-workbench/actions/workflows/ci.yml)
-[![Version: 2.21.5](https://img.shields.io/badge/Version-2.21.5-45c6b1.svg)](CHANGELOG.md)
+[![Version: 2.21.6](https://img.shields.io/badge/Version-2.21.6-45c6b1.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D4.svg)](#快速開始)
 
@@ -78,16 +78,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\bootstrap.ps1
 
 ### 更新既有安裝
 
-工作台「設定 → 更新與版本」會直接查詢 GitHub 版本標籤；有新版時可按「從 GitHub 更新」執行 fast-forward 更新。本機有未提交修改時會先阻止更新並列出檔案。「本機程式檔案」區塊只負責套用磁碟上已有的原始碼變更。
+工作台「設定 → 更新與版本」會追蹤 GitHub 的版本標籤並提示新版。按一次「從 GitHub 更新」即可保存工作內容、自動備份本機程式修改、下載並驗證新版，再自動重新啟動。訓練或匯入尚在進行時，更新會等待工作完成後繼續；下載失敗時保留原內容並可重試。
 
-關閉工作台，更新原始碼並同步主程式依賴：
+必要的主程式依賴會在舊程序退出後自動同步，自訂資料位置也會沿用。專案資料、模型與虛擬環境不會被 Git 更新覆蓋。本機程式修改保存在 `.git/workbench-update-backups/` 的復原紀錄與 Git 備份物件，不會自動套回並覆蓋新版。
+
+開發者也可在關閉工作台後手動更新：
 
 ```powershell
 git pull --ff-only
 powershell -NoProfile -ExecutionPolicy Bypass -File .\bootstrap.ps1
 ```
 
-v2.20.0 新增 `tqdm` 依賴，已安裝的 TorchVision／Ultralytics 環境也需在「設定 → 模型與元件」執行安裝／修復。安裝依賴不會啟動訓練。資料庫升級前會自動備份；固定資料版本與歷史結果保留。自行修改過原始碼時，請先處理 Git 的本地修改提示。
+v2.20.0 新增 `tqdm` 依賴，已安裝的 TorchVision／Ultralytics 環境也需在「設定 → 模型與元件」執行安裝／修復。安裝依賴不會啟動訓練。資料庫升級前會自動備份；固定資料版本與歷史結果保留。
 
 ## 文件
 

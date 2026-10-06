@@ -174,6 +174,10 @@ class MainWindow(QMainWindow):
         self.remote_version_thread = None
         self.remote_version_result = None
         self.remote_update_result = None
+        self.remote_update_phase = None
+        self.remote_update_thread = None
+        self.remote_update_started = 0.0
+        self.remote_camera_result = None
         self.camera_shutdown = None
         self.setWindowTitle("Vision Workbench｜影像資料工作台")
         self.resize(1520, 960)
@@ -257,22 +261,207 @@ class MainWindow(QMainWindow):
             self.start_remote_version_check()
 
     def apply_remote_update(self):
-        if self.remote_update_result is not None:
-            return self.remote_update_result
-        if self.remote_version_thread and self.remote_version_thread.is_alive():
-            return {"state": "checking", "message": "正在完成版本檢查，請稍候。"}
-        self.remote_update_result = {"state": "updating", "message": "正在從 GitHub 更新程式…"}
-        def update():
-            self.remote_update_result = pull_remote_update(APP_ROOT)
-        threading.Thread(target=update, daemon=True).start()
+        if self.update_pending or self.closing:
+            return self.remote_update_result or {"state": "updating", "message": "更新已在進行中，請稍候。"}
+        self.update_pending = True
+        self.remote_update_phase = "waiting"
+        self.remote_update_started = time.monotonic()
+        self.set_remote_update_status({"state": "waiting", "message": "正在確認目前工作，完成儲存後自動更新並重新啟動…"})
+        self.prepare_remote_update()
         return self.remote_update_result
 
+    def set_remote_update_status(self, result):
+        self.remote_update_result = result
+        self.page.runJavaScript(f"window.workbenchRemoteUpdateStatus?.({json.dumps(result, ensure_ascii=False)})")
+
+    def remote_update_busy(self):
+        return bool(self.service.jobs.active() or self.service.training.active_runs()
+                    or self.service._cvat is not None and self.service._cvat.status().get("busy"))
+
+    def prepare_remote_update(self):
+        if self.remote_update_phase != "waiting":
+            return
+        try:
+            if self.remote_update_busy() or self.editor_transition:
+                self.set_remote_update_status({"state": "waiting", "message": "已排入更新，等待匯入、AI、訓練或編輯器同步完成後自動繼續。"})
+                QTimer.singleShot(500, self.prepare_remote_update)
+                return
+            if self.external_mode:
+                self.remote_update_phase = "editor"
+                self.remote_update_started = time.monotonic()
+                self.set_remote_update_status({"state": "saving", "message": "正在儲存並同步標註編輯器，完成後自動更新…"})
+                self.transition_editor("update")
+                return
+            self.remote_update_phase = "saving"
+            self.remote_update_started = time.monotonic()
+            self.set_remote_update_status({"state": "saving", "message": "正在保存專案與介面狀態…"})
+            self.page.runJavaScript("""window.__workbenchRemoteUpdate={state:'saving'};
+                Promise.resolve().then(()=>{
+                    if(!window.workbenchState || !window.workbenchFlush)throw Error('介面尚未就緒，無法確認存檔。');
+                    const current=window.workbenchState();
+                    if(current.transitioning || current.loading)return false;
+                    return Promise.resolve(window.workbenchFlush()).then(saved=>{
+                        if(saved!==true)throw Error('尚未完成儲存，請稍後重試。');
+                        const after=window.workbenchState();
+                        if(after.dirty)throw Error('仍有尚未完成的編輯，請先完成並儲存目前工作。');
+                        return !(after.busy || after.transitioning || after.loading || after.saving);
+                    });
+                }).then(ready=>window.__workbenchRemoteUpdate={state:ready?'ready':'waiting'})
+                .catch(e=>window.__workbenchRemoteUpdate={state:'error',message:String(e.message||e)});""")
+            QTimer.singleShot(120, self.poll_remote_update_save)
+        except Exception as error:
+            logging.exception("Could not prepare GitHub update")
+            self.finish_remote_update({"state": "error", "message": "更新尚未開始；目前工作已保留。" + str(error)})
+
+    def poll_remote_update_save(self):
+        if self.remote_update_phase != "saving":
+            return
+        if time.monotonic() - self.remote_update_started > 120:
+            self.finish_remote_update({"state": "error", "message": "等待儲存逾時；目前工作已保留，請稍後重試。"})
+            return
+        self.page.runJavaScript("JSON.stringify(window.__workbenchRemoteUpdate||{state:'error',message:'介面尚未就緒'})", self.finish_remote_update_save)
+
+    def finish_remote_update_save(self, value):
+        if self.remote_update_phase != "saving":
+            return
+        try:
+            saved = json.loads(value or "{}")
+            if not isinstance(saved, dict):
+                raise ValueError("無法確認儲存狀態")
+            if saved.get("state") == "saving":
+                QTimer.singleShot(150, self.poll_remote_update_save)
+                return
+            if saved.get("state") == "waiting" or saved.get("state") == "ready" and self.remote_update_busy():
+                self.remote_update_phase = "waiting"
+                self.prepare_remote_update()
+                return
+            if saved.get("state") != "ready":
+                self.finish_remote_update({"state": "blocked", "message": saved.get("message") or "請先完成並儲存目前工作。"})
+                return
+            if self.external_mode or self.editor_transition:
+                self.remote_update_phase = "waiting"
+                self.prepare_remote_update()
+                return
+            # Saving is complete. Keep the whole editor disabled until restart or a retryable failure.
+            self.view.setEnabled(False)
+            self.cvat_toolbar.setEnabled(False)
+            camera = getattr(self.service, "_camera", None)
+            if camera is not None:
+                snapshot = camera.status()
+                if snapshot.get("state") in {"starting", "stopping", "running"} or snapshot.get("running") or snapshot.get("recording"):
+                    self.stop_remote_update_camera(camera)
+                    return
+            self.start_remote_update()
+        except Exception as error:
+            logging.exception("Could not start GitHub update")
+            self.finish_remote_update({"state": "error", "message": "更新尚未開始；目前工作已保留。" + str(error)})
+
+    def stop_remote_update_camera(self, camera):
+        self.remote_update_phase = "camera"
+        self.remote_update_started = time.monotonic()
+        self.remote_camera_result = None
+        self.set_remote_update_status({"state": "saving", "message": "正在完成錄影並停止相機，確認檔案保存後自動更新…"})
+
+        def stop_camera():
+            try:
+                if camera.status().get("recording"):
+                    saved = camera.stop_recording()
+                    recording = saved.get("last_recording") or {}
+                    if saved.get("recording") or saved.get("error") or not recording.get("path") or recording.get("frames", 0) <= 0:
+                        raise RuntimeError(saved.get("error") or "錄影檔案尚未完成，暫存內容已保留。")
+                result = camera.stop()
+                if not isinstance(result, dict):
+                    raise ValueError("無法確認相機停止狀態")
+                self.remote_camera_result = result
+            except Exception as error:
+                logging.exception("Could not safely stop camera before update")
+                self.remote_camera_result = {"state": "error", "error": str(error)}
+
+        threading.Thread(target=stop_camera, daemon=True, name="workbench-update-camera").start()
+        QTimer.singleShot(100, self.poll_remote_update_camera)
+
+    def poll_remote_update_camera(self):
+        if self.remote_update_phase != "camera":
+            return
+        try:
+            result = self.remote_camera_result
+            if result is None:
+                if time.monotonic() - self.remote_update_started > 30:
+                    raise RuntimeError("等待相機停止逾時；錄影與目前工作已保留，請稍後重試。")
+                QTimer.singleShot(100, self.poll_remote_update_camera)
+                return
+            if result.get("state") in {"starting", "stopping", "running"} or result.get("running") or result.get("recording"):
+                if time.monotonic() - self.remote_update_started > 30:
+                    raise RuntimeError("相機驅動仍在回應；更新尚未開始，請稍後重試。")
+                self.remote_camera_result = self.service._camera.status()
+                QTimer.singleShot(250, self.poll_remote_update_camera)
+                return
+            if result.get("error") or result.get("state") != "stopped":
+                raise RuntimeError(result.get("error") or "無法確認相機與錄影已安全停止。")
+            if self.remote_update_busy():
+                self.view.setEnabled(True)
+                self.cvat_toolbar.setEnabled(True)
+                self.remote_update_phase = "waiting"
+                self.prepare_remote_update()
+                return
+            self.start_remote_update()
+        except Exception as error:
+            logging.exception("Camera update handoff failed")
+            self.finish_remote_update({"state": "blocked", "message": "更新尚未開始；相機錄影與目前工作已保留。" + str(error)})
+
+    def start_remote_update(self):
+        self.remote_update_phase = "updating"
+        self.remote_update_started = time.monotonic()
+        self.set_remote_update_status({"state": "updating", "message": "內容已儲存，正在備份本機修改並從 GitHub 更新…"})
+
+        def update():
+            try:
+                result = pull_remote_update(
+                    APP_ROOT, progress=lambda message: setattr(self, "remote_update_result", {"state": "updating", "message": str(message)}))
+                if not isinstance(result, dict):
+                    raise ValueError("GitHub 更新服務回應格式無效")
+                self.remote_update_result = result
+            except Exception as error:
+                logging.exception("GitHub update failed")
+                self.remote_update_result = {"state": "error", "message": "GitHub 更新未完成；目前視窗與工作內容已保留。" + str(error)}
+
+        self.remote_update_thread = threading.Thread(target=update, daemon=True, name="workbench-update")
+        self.remote_update_thread.start()
+        QTimer.singleShot(100, self.poll_remote_update)
+
+    def finish_remote_update(self, result):
+        self.remote_update_phase = None
+        self.update_pending = False
+        self.view.setEnabled(True)
+        self.cvat_toolbar.setEnabled(True)
+        self.set_remote_update_status(result)
+
     def poll_remote_update(self):
+        if self.remote_update_phase == "editor" and time.monotonic() - self.remote_update_started > 120:
+            self.finish_editor_sync("等待標註儲存逾時；原內容已保留，請稍後重試。")
+            return
+        if self.remote_update_phase != "updating":
+            return
         result = self.remote_update_result
         if not result or result.get("state") in {"updating", "checking"}:
+            if result:
+                self.page.runJavaScript(f"window.workbenchRemoteUpdateStatus?.({json.dumps(result, ensure_ascii=False)})")
             return
-        self.remote_update_result = None
-        self.page.runJavaScript(f"window.workbenchRemoteUpdateStatus?.({json.dumps(result, ensure_ascii=False)})")
+        try:
+            retry_restart = result.get("state") in {"current", "up_to_date"} and changed_sources(self.source_baseline, source_snapshot(APP_ROOT))
+            if result.get("state") == "updated" or retry_restart:
+                # Any pulled commit requires a restart, including changes only to tests or docs.
+                validate_sources(APP_ROOT)
+                schedule_restart(APP_ROOT, data_root=self.service.data_root)
+                self.remote_update_phase = "restarting"
+                self.set_remote_update_status({**result, "state": "restarting", "message": "更新已驗證，正在自動重新啟動工作台…"})
+                self.allow_close = True
+                QTimer.singleShot(250, QApplication.closeAllWindows)
+            else:
+                self.finish_remote_update(result)
+        except Exception as error:
+            logging.exception("Could not restart updated workbench")
+            self.finish_remote_update({**result, "state": "error", "message": "程式已更新，重新啟動尚未完成；目前視窗與工作內容已保留，請重試。" + str(error)})
 
     def toggle_fullscreen(self):
         """Switch the native workbench between full-screen and windowed mode."""
@@ -374,11 +563,16 @@ class MainWindow(QMainWindow):
         if self.labelme_editor:self.labelme_editor.setEnabled(True)
         if error:
             self.editor_status.setText('尚未同步 · 內容已保留，請修正後重試')
+            if transition['target']=='update':
+                self.finish_remote_update({"state":"blocked","message":"標註尚未同步；原內容已保留。"+str(error)})
             QMessageBox.warning(self,'標註尚未同步',error);return
         self.external_mode=None
         self.stack.setCurrentWidget(self.view);self.cvat_toolbar.hide()
         if transition['source']=='cvat':self.cvat_view.setUrl(QUrl('about:blank'))
-        if transition['target']=='close':QTimer.singleShot(0,self.close)
+        if transition['target']=='update':
+            self.remote_update_phase='waiting'
+            self.prepare_remote_update()
+        elif transition['target']=='close':QTimer.singleShot(0,self.close)
         else:self.page.runJavaScript(f'window.workbenchExternalNavigate?.({json.dumps(transition["target"])})')
 
     def check_update_indicator(self):
@@ -449,7 +643,7 @@ class MainWindow(QMainWindow):
             if not changes:
                 self.update_pending=False
                 self.notify_update_progress("current","目前執行中的程式與本機檔案一致。");return
-            validate_sources(APP_ROOT);schedule_restart(APP_ROOT)
+            validate_sources(APP_ROOT);schedule_restart(APP_ROOT,data_root=self.service.data_root)
             self.notify_update_progress("restarting","更新已驗證，工作台正在重新啟動…")
             self.allow_close=True;QTimer.singleShot(250,QApplication.closeAllWindows)
         except (OSError,SyntaxError,ValueError) as error:
@@ -494,6 +688,8 @@ class MainWindow(QMainWindow):
             event.accept()
             return
         event.ignore()
+        if self.update_pending:
+            return
         if self.external_mode:
             self.transition_editor('close');return
         if self.closing:
